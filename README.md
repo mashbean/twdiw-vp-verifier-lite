@@ -50,10 +50,17 @@ Deploy:
 
 ```bash
 npm run deploy
-# then point verifier.mashbean.net at the Worker (Cloudflare dashboard → Workers →
-# Custom Domains), or uncomment the `routes` block in wrangler.toml and redeploy.
-# Set VERIFIER_ORIGIN=https://verifier.mashbean.net so response_uri is reachable.
 ```
+
+**Live now** at **https://mashbean-vp-verifier.mashbean.workers.dev** (deployed
+2026-08-29). Open it in a browser to get a QR; the OIDC4VP flow — session mint,
+Authorization Request object, `direct_post` response, result poll — is verified live.
+`VERIFIER_ORIGIN` is left blank, so `response_uri` / `client_id` fall back to the
+request origin (the workers.dev URL), which is reachable — fine for the demo.
+
+To move it to **verifier.mashbean.net**: uncomment the `routes` block in
+`wrangler.toml` (the `mashbean.net` zone is on this account), redeploy, and set
+`VERIFIER_ORIGIN=https://verifier.mashbean.net` so the wallet posts back there.
 
 ## Before you trust a result — the real gate
 

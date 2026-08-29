@@ -11,6 +11,10 @@ main = "src/index.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
+# This OAuth login has two accounts; pin the one that owns the deploy so
+# `wrangler deploy` isn't ambiguous in non-interactive runs. (Account id, not a secret.)
+account_id = "fd8f8ed12dcdfd03ad171a3a74bc712a"
+
 # routes = [
 #   { pattern = "verifier.mashbean.net", custom_domain = true }
 # ]
