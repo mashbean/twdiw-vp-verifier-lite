@@ -5,9 +5,12 @@ on **Cloudflare Workers**. It shows a QR the「有備而來 / Bonds」wallet sca
 the presentation over `direct_post`, and verifies the SD-JWT-VC (issuer signature +
 disclosures + holder key-binding) — all at the edge, no server to run.
 
-This is **Phase 1** from the研究 plan: a working cross-device demo. It is written to
-the current specs but has **not been tested against a real moda-issued credential** —
-do that (and pin the issuer trust anchor) before trusting any result.
+This is **Phase 1** from the研究 plan: a working cross-device demo. The verification
+logic is now **tested end-to-end** against a self-minted credential (`npm test`,
+below) — the good path plus every rejection (bad nonce, wrong audience, wrong holder
+key, untrusted issuer, revoked/suspended status). It has **not yet been tested against
+a real moda-issued credential**; do that — and pin the issuer trust anchor, and
+confirm the `client_id` scheme moda's wallet requires — before trusting any result.
 
 ## Architecture
 
@@ -25,14 +28,20 @@ verifier.mashbean.net
 
 Verification (`src/verify.ts`), in order: issuer JWT signature against the issuer's
 `.well-known/jwt-vc-issuer` JWKS → disclosures re-hashed and matched into `_sd`
-(flat, nested, and `...` array digests) → key-binding JWT against the credential's
-`cnf` key, checking `nonce` (== ours), `aud` (== our client_id), and `sd_hash` →
-`exp`/`nbf`.
+(flat, nested, and `...` array digests; values decoded as UTF-8 so Chinese names and
+addresses survive) → key-binding JWT against the credential's `cnf` key, checking
+`nonce` (== ours), `aud` (== our client_id), and `sd_hash` → revocation via the
+credential's **Token Status List** reference → `exp`/`nbf`.
+
+Revocation is fail-**open** on "unknown" (no status claim, or the list unreachable):
+a definite revoked/suspended blocks the result, but an unreachable list does not.
+Production should fail-closed instead — see the note in `checkRevocation`.
 
 ## Run it
 
 ```bash
 npm install
+npm test                    # verification suite — no network, no Cloudflare account
 npx wrangler login          # your Cloudflare account
 npm run dev                 # http://localhost:8787  — open it, a QR appears
 ```
@@ -63,7 +72,6 @@ npm run deploy
 ## Deferred to later phases (research plan)
 
 - Signed request objects (`request_uri` → JAR) so the request is authenticated.
-- **Token Status List** revocation check.
 - `direct_post.jwt` (encrypted responses).
 - `transaction_data` binding; an audit log (D1).
 - **ZK layer** — BBS-2023 / zk-SNARK predicate proofs, likely a separate off-edge
