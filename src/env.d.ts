@@ -1,0 +1,6 @@
+// Bindings from wrangler.toml. `npx wrangler types` regenerates a fuller version.
+interface Env {
+  SESSIONS: DurableObjectNamespace;
+  VERIFIER_ORIGIN: string;
+  TRUSTED_ISSUERS: string;
+}
