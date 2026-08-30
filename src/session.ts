@@ -53,8 +53,11 @@ export class PresentationSession {
     if (op === "/request") {
       const s = await this.load();
       if (!s) return new Response("gone", { status: 404 });
-      // The OpenID4VP Authorization Request (unsigned Phase-1). Newer wallets use
-      // `dcql_query`; `presentation_definition` is the widely-accepted fallback.
+      // The OpenID4VP Authorization Request (unsigned Phase-1). Both query languages
+      // are offered so either generation of wallet can present: newer ones read
+      // `dcql_query`, while `presentation_definition` (DIF PE) is what the wider
+      // installed base — including presentation_submission wallets like TWDIW — still
+      // uses. A wallet that understands both is expected to prefer `dcql_query`.
       return Response.json({
         client_id: s.clientId,
         response_type: "vp_token",
@@ -67,6 +70,25 @@ export class PresentationSession {
               id: "cred",
               format: "dc+sd-jwt",
               meta: s.vct ? { vct_values: [s.vct] } : undefined,
+            },
+          ],
+        },
+        presentation_definition: {
+          id: "bonds-vp",
+          input_descriptors: [
+            {
+              id: "cred",
+              format: {
+                "vc+sd-jwt": {
+                  "sd-jwt_alg_values": ["ES256", "ES384"],
+                  "kb-jwt_alg_values": ["ES256", "ES384"],
+                },
+              },
+              // Constrain by credential type when one was asked for, so the wallet
+              // offers the right card; otherwise leave it open.
+              constraints: s.vct
+                ? { fields: [{ path: ["$.vct"], filter: { type: "string", const: s.vct } }] }
+                : { fields: [] },
             },
           ],
         },
