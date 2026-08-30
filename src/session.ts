@@ -5,6 +5,9 @@
 
 import { verifySdJwtVc } from "./verify";
 import { verifyModaVpToken } from "./moda";
+import { isAdultFromClaims } from "./age";
+
+const ADULT_AGE = 18;
 
 interface SessionState {
   nonce: string;
@@ -12,9 +15,13 @@ interface SessionState {
   clientId: string;          // the verifier's did:key — also the vp_token `aud`
   responseUri: string;
   vct?: string;              // the credential type this verifier is asking for
+  /** "age" asks only for proof of adulthood (one field: the birthday). */
+  mode?: "age" | "general";
   status: "pending" | "verified" | "failed";
   reason?: string;
   claims?: Record<string, unknown>;
+  /** For age mode: whether the holder is at least 18 (null = no birthday disclosed). */
+  adult?: boolean | null;
   createdAt: number;
 }
 
@@ -60,14 +67,15 @@ export class PresentationSession {
     const op = url.pathname;
 
     if (op === "/init") {
-      const { clientId, responseUri, vct } = (await req.json()) as {
+      const { clientId, responseUri, vct, mode } = (await req.json()) as {
         clientId: string;
         responseUri: string;
         vct?: string;
+        mode?: "age" | "general";
       };
       const nonce = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
       const state = crypto.randomUUID();
-      const s: SessionState = { nonce, state, clientId, responseUri, vct, status: "pending", createdAt: Date.now() };
+      const s: SessionState = { nonce, state, clientId, responseUri, vct, mode: mode ?? "general", status: "pending", createdAt: Date.now() };
       await this.put(s);
       await this.state.storage.setAlarm(Date.now() + TTL_MS);
       return Response.json({ nonce, state });
@@ -93,17 +101,20 @@ export class PresentationSession {
             {
               id: "cred",
               format: { "vc+sd-jwt": { "sd-jwt_alg_values": ["ES256"], "kb-jwt_alg_values": ["ES256"] } },
-              // Ask for a couple of concrete claims so the wallet shows its
-              // disclosure picker and the holder can reveal (or withhold) them —
-              // `name` / `roc_birthday` are on the driver-licence card. A card
-              // without them simply offers nothing to disclose. When a `vct` is set
-              // the `$.type` `contains` constraint narrows which card the wallet uses.
+              // Age mode asks for the birthday and nothing else — the verifier turns
+              // it into a yes/no answer, so it never sees name, ID number or address.
+              // General mode asks for a couple of claims so the disclosure picker has
+              // something to show. `name` / `roc_birthday` are on the driving-licence
+              // card; a card without them simply offers nothing to disclose.
               constraints: {
-                fields: [
-                  ...(s.vct ? [{ path: ["$.type"], filter: { type: "string", contains: { const: s.vct } } }] : []),
-                  { path: ["$.credentialSubject.name"] },
-                  { path: ["$.credentialSubject.roc_birthday"] },
-                ],
+                fields:
+                  s.mode === "age"
+                    ? [{ path: ["$.credentialSubject.roc_birthday"] }]
+                    : [
+                        ...(s.vct ? [{ path: ["$.type"], filter: { type: "string", contains: { const: s.vct } } }] : []),
+                        { path: ["$.credentialSubject.name"] },
+                        { path: ["$.credentialSubject.roc_birthday"] },
+                      ],
               },
             },
           ],
@@ -146,6 +157,15 @@ export class PresentationSession {
       s.reason = result.reason;
       s.claims = result.claims;
       s.vct = result.vct ?? s.vct;
+      // Age mode: reduce the disclosed birthday to a single yes/no, computed here so
+      // the front-end never needs the birthday itself.
+      if (result.ok && s.mode === "age") {
+        s.adult = isAdultFromClaims(result.claims, ADULT_AGE, Date.now());
+        if (s.adult === null) {
+          s.status = "failed";
+          s.reason = "no birthday was disclosed to check age against";
+        }
+      }
       await this.put(s);
       // direct_post: 200 with an empty body; the front-end polls /result.
       return Response.json({ status: s.status });
@@ -157,7 +177,12 @@ export class PresentationSession {
       return Response.json({
         status: s.status,
         reason: s.reason,
+        mode: s.mode,
         vct: s.vct,
+        adult: s.mode === "age" ? s.adult ?? undefined : undefined,
+        adultAge: ADULT_AGE,
+        // In age mode the only field the verifier holds is the birthday; general
+        // mode returns whatever was disclosed.
         claims: s.status === "verified" ? s.claims : undefined,
       });
     }
