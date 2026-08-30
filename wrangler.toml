@@ -3,9 +3,6 @@
 # Deploy:  npm install && npx wrangler login && npm run deploy
 # Local:   npm run dev   (http://localhost:8787)
 #
-# The custom domain (verifier.mashbean.net) is commented out until you point it in
-# the Cloudflare dashboard, or uncomment the route below and `wrangler deploy`.
-
 name = "mashbean-vp-verifier"
 main = "src/index.ts"
 compatibility_date = "2024-09-23"
@@ -15,9 +12,11 @@ compatibility_flags = ["nodejs_compat"]
 # `wrangler deploy` isn't ambiguous in non-interactive runs. (Account id, not a secret.)
 account_id = "fd8f8ed12dcdfd03ad171a3a74bc712a"
 
-# routes = [
-#   { pattern = "verifier.mashbean.net", custom_domain = true }
-# ]
+# Custom domain on the mashbean.net zone (which is on this Cloudflare account).
+# Wrangler creates the DNS + cert automatically. The workers.dev URL keeps working.
+routes = [
+  { pattern = "verifier.mashbean.net", custom_domain = true }
+]
 
 # One Durable Object instance per presentation session holds the nonce and the
 # verification result — strong, read-after-write consistent, unlike KV. Self-expires
