@@ -26,9 +26,19 @@ account_id = "fd8f8ed12dcdfd03ad171a3a74bc712a"
 name = "SESSIONS"
 class_name = "PresentationSession"
 
+# The verifier's own signing identity (the P-256 key behind its did:key client_id),
+# a singleton generated once and persisted. See src/identity.ts.
+[[durable_objects.bindings]]
+name = "IDENTITY"
+class_name = "VerifierIdentity"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["PresentationSession"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["VerifierIdentity"]
 
 [vars]
 # The public origin the wallet will POST the vp_token back to. Set this to your

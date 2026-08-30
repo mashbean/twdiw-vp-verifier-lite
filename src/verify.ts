@@ -3,19 +3,21 @@
 // A TWDIW credential arrives as an SD-JWT-VC compact serialization:
 //     <issuer-signed JWT>~<disclosure>~…~<disclosure>~<key-binding JWT>
 //
-// This verifies, in order:
-//   1. the issuer JWT's signature, against the issuer's published JWKS;
-//   2. the disclosures, by re-hashing each and matching it into the `_sd` digests
-//      (flat and nested objects, and `...` array-element digests);
-//   3. the key-binding JWT, against the credential's `cnf` key, including its
-//      `nonce` (== the nonce we issued) and `aud` (== our client_id) and `sd_hash`;
-//   4. revocation, via the credential's Token Status List reference.
-// `exp` / `nbf` are enforced inside each `jwtVerify`.
+// The issuer-signed part is verified the same way no matter how the holder proves
+// possession, so that half lives in `verifyIssuerCredential` and is shared by:
+//   * `verifySdJwtVc` — the standards path, where the holder binding is a KB-JWT
+//     appended to the SD-JWT-VC;
+//   * `verifyModaVpToken` (src/moda.ts) — the TWDIW/有備而來 path, where the
+//     holder binding is an *outer* VerifiablePresentation JWT and the inner
+//     credential carries no KB-JWT.
 //
-// Web Crypto + jose only — everything here runs on Cloudflare Workers. It is
-// written to the SD-JWT (RFC 9901) + SD-JWT-VC (draft) shape; it MUST be tested
-// against a real moda-issued credential before a result is trusted, and the
-// issuer trust anchor (whose JWKS is fetched) pinned to moda in production.
+// `verifyIssuerCredential`, in order: issuer JWT signature against the issuer's
+// `.well-known/jwt-vc-issuer` JWKS → disclosures re-hashed and matched into `_sd`
+// (flat, nested, and `...` array digests; values decoded as UTF-8 so Chinese names
+// survive) → revocation via the Token Status List. `exp`/`nbf` are enforced inside
+// `jwtVerify`.
+//
+// Web Crypto + jose only — everything here runs on Cloudflare Workers.
 
 import {
   createRemoteJWKSet,
@@ -32,6 +34,8 @@ export interface VerifyOptions {
   trustedIssuers: string[]; // empty = accept any resolvable issuer (demo only)
 }
 
+export type RevocationStatus = "valid" | "revoked" | "suspended" | "unknown";
+
 export interface VerifyResult {
   ok: boolean;
   reason?: string;
@@ -43,7 +47,17 @@ export interface VerifyResult {
   status?: RevocationStatus;
 }
 
-type RevocationStatus = "valid" | "revoked" | "suspended" | "unknown";
+/** The issuer-signed half, plus the holder key the issuer bound it to (`cnf`). */
+export interface IssuerCredentialResult {
+  ok: boolean;
+  reason?: string;
+  vct?: string;
+  issuer?: string;
+  claims?: Record<string, unknown>;
+  /** The `cnf.jwk` the credential is bound to — what a holder proof must match. */
+  cnf?: JWK;
+  status?: RevocationStatus;
+}
 
 const enc = new TextEncoder();
 
@@ -76,16 +90,12 @@ function b64urlToText(s: string): string {
 
 /** Resolve the issuer's JWKS the SD-JWT-VC way (`.well-known/jwt-vc-issuer`). */
 async function issuerKeySet(iss: string) {
-  // Per draft-ietf-oauth-sd-jwt-vc: the JWT VC issuer metadata lives at
-  // <iss-origin>/.well-known/jwt-vc-issuer<iss-path>, and carries either `jwks`
-  // inline or a `jwks_uri`.
   const u = new URL(iss);
   const metadataUrl = `${u.origin}/.well-known/jwt-vc-issuer${u.pathname}`;
   const res = await fetch(metadataUrl, { headers: { accept: "application/json" } });
   if (!res.ok) throw new Error(`issuer metadata ${res.status} at ${metadataUrl}`);
   const meta = (await res.json()) as { jwks?: { keys: JWK[] }; jwks_uri?: string };
   if (meta.jwks?.keys?.length) {
-    // Return a local resolver over the inline keys.
     return async (header: { kid?: string; alg?: string }) => {
       const jwk = meta.jwks!.keys.find((k) => !header.kid || (k as { kid?: string }).kid === header.kid) ?? meta.jwks!.keys[0];
       return importJWK(jwk, header.alg ?? "ES256");
@@ -106,7 +116,6 @@ function insertDisclosures(node: unknown, digestMap: Map<string, [string, string
       if (el && typeof el === "object" && "..." in (el as object)) {
         const d = (el as { "...": string })["..."];
         if (arrayDigestMap.has(d)) out.push(insertDisclosures(arrayDigestMap.get(d), digestMap, arrayDigestMap));
-        // an unmatched `...` is a decoy; drop it.
       } else {
         out.push(insertDisclosures(el, digestMap, arrayDigestMap));
       }
@@ -141,17 +150,9 @@ async function inflate(bytes: Uint8Array): Promise<Uint8Array> {
 }
 
 /**
- * Token Status List revocation check (draft-ietf-oauth-status-list).
- *
- * A credential that can be revoked carries `status.status_list = { idx, uri }`.
- * The verifier fetches the status list token at `uri` (a signed JWT whose payload
- * holds `status_list = { bits, lst }`), verifies its signature the same way it
- * verifies the credential issuer, inflates the `lst` bitstring, and reads the
- * `bits`-wide value at `idx`: 0 = valid, 1 = revoked, 2 = suspended.
- *
- * Returns "unknown" (never throws) when the credential carries no status claim or
- * the list can't be reached/verified — the caller decides whether "unknown" blocks.
- * A definite 1/2 is authoritative and does block.
+ * Token Status List revocation check (draft-ietf-oauth-status-list). Returns
+ * "unknown" (never throws) when the credential carries no status claim or the list
+ * can't be reached/verified — the caller decides whether "unknown" blocks.
  */
 async function checkRevocation(payload: Record<string, unknown>): Promise<{ status: RevocationStatus; reason?: string }> {
   const ref = (payload.status as { status_list?: { idx?: number; uri?: string } } | undefined)?.status_list;
@@ -166,8 +167,6 @@ async function checkRevocation(payload: Record<string, unknown>): Promise<{ stat
     const stPayload = decodeJwt(token) as Record<string, unknown>;
     const stIss = String(stPayload.iss ?? "");
     if (!stIss) return { status: "unknown", reason: "status list has no iss" };
-    // Same issuer-key resolution as the credential; a bad signature or a mismatched
-    // `sub` (which must equal the list's own URI) means we don't trust the list.
     const getKey = await issuerKeySet(stIss);
     await jwtVerify(token, (await getKey(stHeader)) as never);
     if (stPayload.sub && String(stPayload.sub) !== ref.uri) {
@@ -177,7 +176,7 @@ async function checkRevocation(payload: Record<string, unknown>): Promise<{ stat
     if (!list?.lst) return { status: "unknown", reason: "status list has no lst" };
     const bits = list.bits ?? 1;
     const bytes = await inflate(b64urlToBytes(list.lst));
-    const perByte = 8 / bits;                     // statuses packed least-significant-first
+    const perByte = 8 / bits;
     const byte = bytes[Math.floor(ref.idx / perByte)] ?? 0;
     const shift = (ref.idx % perByte) * bits;
     const value = (byte >> shift) & ((1 << bits) - 1);
@@ -189,54 +188,79 @@ async function checkRevocation(payload: Record<string, unknown>): Promise<{ stat
   }
 }
 
+/**
+ * Verifies the issuer-signed half of an SD-JWT-VC: issuer signature, disclosures,
+ * and revocation. Does NOT verify holder binding — the caller does that with either
+ * a KB-JWT or an outer VP JWT. Returns the disclosed claims and the credential's
+ * `cnf` key so the caller can bind the holder proof to it.
+ */
+export async function verifyIssuerCredential(
+  issuerJwt: string,
+  disclosures: string[],
+  trustedIssuers: string[],
+): Promise<IssuerCredentialResult> {
+  const header = decodeProtectedHeader(issuerJwt) as { alg?: string; kid?: string; typ?: string };
+  const payload = decodeJwt(issuerJwt) as Record<string, unknown>;
+  const iss = String(payload.iss ?? "");
+  if (!iss) return { ok: false, reason: "no iss in credential" };
+  if (trustedIssuers.length && !trustedIssuers.includes(iss)) {
+    return { ok: false, reason: `issuer ${iss} not in the trust list` };
+  }
+  const getKey = await issuerKeySet(iss);
+  const key = await getKey(header);
+  await jwtVerify(issuerJwt, key as never); // throws on bad signature / exp / nbf
+
+  const digestMap = new Map<string, [string, string, unknown]>();
+  const arrayDigestMap = new Map<string, unknown>();
+  for (const d of disclosures) {
+    if (!d) continue;
+    const digest = await sha256b64url(d);
+    const arr = JSON.parse(b64urlToText(d)) as unknown[];
+    if (arr.length === 3) digestMap.set(digest, [String(arr[0]), String(arr[1]), arr[2]]);
+    else if (arr.length === 2) arrayDigestMap.set(digest, arr[1]);
+  }
+  const claims = insertDisclosures(payload, digestMap, arrayDigestMap) as Record<string, unknown>;
+
+  const revocation = await checkRevocation(payload);
+  if (revocation.status === "revoked" || revocation.status === "suspended") {
+    return { ok: false, reason: `credential is ${revocation.status}`, vct: typeof payload.vct === "string" ? payload.vct : undefined, issuer: iss, status: revocation.status };
+  }
+
+  return {
+    ok: true,
+    vct: typeof payload.vct === "string" ? payload.vct : undefined,
+    issuer: iss,
+    claims,
+    cnf: (payload.cnf as { jwk?: JWK } | undefined)?.jwk,
+    status: revocation.status,
+  };
+}
+
+/**
+ * Standards path: an SD-JWT-VC whose holder binding is a KB-JWT appended after the
+ * disclosures. Splits the compact form, verifies the issuer half via
+ * `verifyIssuerCredential`, then checks the KB-JWT against the credential's `cnf`
+ * key — its `nonce`, `aud`, and `sd_hash`.
+ */
 export async function verifySdJwtVc(vpToken: string, opts: VerifyOptions): Promise<VerifyResult> {
   try {
     const parts = vpToken.split("~");
     const issuerJwt = parts[0];
     const endsWithTilde = vpToken.endsWith("~");
     const kbJwt = endsWithTilde ? undefined : parts[parts.length - 1];
-    const disclosures = parts.slice(1, endsWithTilde ? parts.length - 1 : parts.length - 1);
+    const disclosures = parts.slice(1, parts.length - 1);
 
-    // 1. Issuer JWT signature.
-    const header = decodeProtectedHeader(issuerJwt) as { alg?: string; kid?: string; typ?: string };
-    const payload = decodeJwt(issuerJwt) as Record<string, unknown>;
-    const iss = String(payload.iss ?? "");
-    if (!iss) return { ok: false, reason: "no iss in credential" };
-    if (opts.trustedIssuers.length && !opts.trustedIssuers.includes(iss)) {
-      return { ok: false, reason: `issuer ${iss} not in the trust list` };
-    }
-    const getKey = await issuerKeySet(iss);
-    const key = await getKey(header);
-    await jwtVerify(issuerJwt, key as never); // throws on bad signature / exp / nbf
+    const base = await verifyIssuerCredential(issuerJwt, disclosures, opts.trustedIssuers);
+    if (!base.ok) return { ok: false, reason: base.reason, vct: base.vct, issuer: base.issuer, status: base.status };
 
-    // 2. Disclosures → matched into `_sd`.
-    const digestMap = new Map<string, [string, string, unknown]>(); // digest -> [salt, name, value]
-    const arrayDigestMap = new Map<string, unknown>();               // digest -> value
-    for (const d of disclosures) {
-      if (!d) continue;
-      const digest = await sha256b64url(d);
-      const arr = JSON.parse(b64urlToText(d)) as unknown[];
-      if (arr.length === 3) digestMap.set(digest, [String(arr[0]), String(arr[1]), arr[2]]);
-      else if (arr.length === 2) arrayDigestMap.set(digest, arr[1]);
-    }
-    const claims = insertDisclosures(payload, digestMap, arrayDigestMap) as Record<string, unknown>;
-
-    // 3. Key-binding JWT (holder proof).
     let keyBound = false;
     if (kbJwt) {
-      const cnf = (payload.cnf as { jwk?: JWK } | undefined)?.jwk;
-      if (!cnf) return { ok: false, reason: "credential has no cnf key for key binding" };
+      if (!base.cnf) return { ok: false, reason: "credential has no cnf key for key binding" };
       const kbHeader = decodeProtectedHeader(kbJwt) as { alg?: string };
-      const kbKey = await importJWK(cnf, kbHeader.alg ?? "ES256");
-      const { payload: kbPayload } = await jwtVerify(kbJwt, kbKey as never, {
-        audience: opts.expectedAudience,
-      });
+      const kbKey = await importJWK(base.cnf, kbHeader.alg ?? "ES256");
+      const { payload: kbPayload } = await jwtVerify(kbJwt, kbKey as never, { audience: opts.expectedAudience });
       if (kbPayload.nonce !== opts.expectedNonce) return { ok: false, reason: "key-binding nonce mismatch" };
-      // sd_hash binds the KB-JWT to exactly these issuer JWT + disclosures. Its
-      // input is the presentation up to and including the last `~` before the
-      // KB-JWT — i.e. the whole token minus the KB-JWT. Reconstructing it from the
-      // token (rather than re-joining parts) keeps it correct when there are zero
-      // disclosures, where a re-join would wrongly yield `<jwt>~~`.
+      // sd_hash is over the presentation up to and including the last `~` before the KB-JWT.
       const presented = vpToken.slice(0, vpToken.lastIndexOf("~") + 1);
       const expectedSdHash = await sha256b64url(presented);
       if (kbPayload.sd_hash && kbPayload.sd_hash !== expectedSdHash) {
@@ -245,22 +269,7 @@ export async function verifySdJwtVc(vpToken: string, opts: VerifyOptions): Promi
       keyBound = true;
     }
 
-    // 4. Revocation (Token Status List). A definite revoked/suspended blocks the
-    // result; "unknown" (no status claim, or the list unreachable) does not — this
-    // is a demo verifier, and production would fail-closed on "unknown" instead.
-    const revocation = await checkRevocation(payload);
-    if (revocation.status === "revoked" || revocation.status === "suspended") {
-      return { ok: false, reason: `credential is ${revocation.status}`, vct: typeof payload.vct === "string" ? payload.vct : undefined, issuer: iss, status: revocation.status };
-    }
-
-    return {
-      ok: true,
-      vct: typeof payload.vct === "string" ? payload.vct : undefined,
-      issuer: iss,
-      claims,
-      keyBound,
-      status: revocation.status,
-    };
+    return { ok: true, vct: base.vct, issuer: base.issuer, claims: base.claims, keyBound, status: base.status };
   } catch (e) {
     return { ok: false, reason: e instanceof Error ? e.message : "verification error" };
   }

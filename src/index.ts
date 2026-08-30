@@ -2,19 +2,21 @@
 //
 // Flow (OpenID4VP 1.0, cross-device, direct_post):
 //   1. front-end  POST /api/presentations  → mint a session (Durable Object),
-//      return the openid4vp:// QR payload.
-//   2. wallet scans → GET /api/request/:id  → the Authorization Request object.
+//      return the openid4vp:// QR payload (client_id = the verifier's did:key).
+//   2. wallet scans → GET /api/request/:id  → a SIGNED Authorization Request (JAR),
+//      signed by the key in client_id — which the 有備而來 wallet requires.
 //   3. wallet      POST /api/response/:id    → the vp_token (direct_post); we verify.
+//      Two dialects accepted: a standards SD-JWT-VC, or a TWDIW VP JWT wrapping one.
 //   4. front-end   GET /api/result/:id       → the verdict + disclosed claims.
 //
-// Phase-1 uses the unauthenticated `redirect_uri` client_id scheme (client_id ==
-// response_uri) — demo-grade. Production needs the verifier trust scheme moda's
-// wallet requires (x509_san_dns / a registered client_id); see README.
+// The verifier's identity (the P-256 key behind its did:key) is a singleton Durable
+// Object, generated once and persisted — see src/identity.ts.
 
 import { PresentationSession } from "./session";
+import { VerifierIdentity } from "./identity";
 import { FRONTEND_HTML } from "./frontend";
 
-export { PresentationSession };
+export { PresentationSession, VerifierIdentity };
 
 function origin(req: Request, env: Env): string {
   if (env.VERIFIER_ORIGIN) return env.VERIFIER_ORIGIN.replace(/\/$/, "");
@@ -26,6 +28,13 @@ function session(env: Env, id: string) {
   return {
     call: (op: string, init?: RequestInit) => stub.fetch("https://do" + op, init),
   };
+}
+
+async function verifierDidKey(env: Env): Promise<string> {
+  const stub = env.IDENTITY.get(env.IDENTITY.idFromName("verifier"));
+  const res = await stub.fetch("https://id/identity");
+  const { didKey } = (await res.json()) as { didKey: string };
+  return didKey;
 }
 
 export default {
@@ -44,7 +53,10 @@ export default {
       const id = crypto.randomUUID();
       const base = origin(req, env);
       const responseUri = `${base}/api/response/${id}`;
-      const clientId = responseUri; // redirect_uri scheme
+      // The wallet takes the request-signing key from client_id, so it must be the
+      // verifier's did:key — not the response_uri (that redirect_uri scheme is what
+      // the 有備而來 wallet rejects).
+      const clientId = await verifierDidKey(env);
       await session(env, id).call("/init", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -52,10 +64,10 @@ export default {
       });
       const requestUri = `${base}/api/request/${id}`;
       const qr = `openid4vp://?client_id=${encodeURIComponent(clientId)}&request_uri=${encodeURIComponent(requestUri)}`;
-      return Response.json({ id, qr, requestUri, responseUri });
+      return Response.json({ id, qr, requestUri, responseUri, clientId });
     }
 
-    // 2. The Authorization Request object the wallet fetches.
+    // 2. The signed Authorization Request the wallet fetches.
     const reqMatch = path.match(/^\/api\/request\/([0-9a-f-]{36})$/);
     if (req.method === "GET" && reqMatch) {
       return session(env, reqMatch[1]).call("/request");
@@ -64,7 +76,6 @@ export default {
     // 3. direct_post from the wallet.
     const resMatch = path.match(/^\/api\/response\/([0-9a-f-]{36})$/);
     if (req.method === "POST" && resMatch) {
-      // Forward the form body to the session for verification.
       return session(env, resMatch[1]).call("/response", {
         method: "POST",
         headers: { "content-type": req.headers.get("content-type") ?? "application/x-www-form-urlencoded" },
