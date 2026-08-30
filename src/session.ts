@@ -93,9 +93,18 @@ export class PresentationSession {
             {
               id: "cred",
               format: { "vc+sd-jwt": { "sd-jwt_alg_values": ["ES256"], "kb-jwt_alg_values": ["ES256"] } },
-              constraints: s.vct
-                ? { fields: [{ path: ["$.type"], filter: { type: "string", contains: { const: s.vct } } }] }
-                : { fields: [] },
+              // Ask for a couple of concrete claims so the wallet shows its
+              // disclosure picker and the holder can reveal (or withhold) them —
+              // `name` / `roc_birthday` are on the driver-licence card. A card
+              // without them simply offers nothing to disclose. When a `vct` is set
+              // the `$.type` `contains` constraint narrows which card the wallet uses.
+              constraints: {
+                fields: [
+                  ...(s.vct ? [{ path: ["$.type"], filter: { type: "string", contains: { const: s.vct } } }] : []),
+                  { path: ["$.credentialSubject.name"] },
+                  { path: ["$.credentialSubject.roc_birthday"] },
+                ],
+              },
             },
           ],
         },
