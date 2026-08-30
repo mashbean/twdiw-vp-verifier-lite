@@ -27,6 +27,7 @@ import {
   importJWK,
   type JWK,
 } from "jose";
+import { resolveDidKeyToJwk } from "./didkey";
 
 export interface VerifyOptions {
   expectedNonce: string;
@@ -88,8 +89,16 @@ function b64urlToText(s: string): string {
   return new TextDecoder().decode(b64urlToBytes(s));
 }
 
-/** Resolve the issuer's JWKS the SD-JWT-VC way (`.well-known/jwt-vc-issuer`). */
+/** Resolve the issuer's verifying key. TWDIW/moda issuers name themselves with a
+ *  `did:key` that embeds the key (no network); other issuers publish it at
+ *  `.well-known/jwt-vc-issuer`. */
 async function issuerKeySet(iss: string) {
+  // did:key issuer — the key is inside the identifier, self-certifying.
+  if (iss.startsWith("did:key:")) {
+    const jwk = resolveDidKeyToJwk(iss);
+    if (!jwk) throw new Error(`unsupported did:key issuer: ${iss.slice(0, 24)}…`);
+    return async (header: { kid?: string; alg?: string }) => importJWK(jwk, header.alg ?? "ES256");
+  }
   const u = new URL(iss);
   const metadataUrl = `${u.origin}/.well-known/jwt-vc-issuer${u.pathname}`;
   const res = await fetch(metadataUrl, { headers: { accept: "application/json" } });

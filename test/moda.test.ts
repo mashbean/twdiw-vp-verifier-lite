@@ -8,7 +8,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { SignJWT, exportJWK, generateKeyPair, type JWK } from "jose";
 import { verifyModaVpToken } from "../src/moda";
-import { p256DidKey } from "../src/didkey";
+import { p256DidKey, jwkJcsPubDidKey } from "../src/didkey";
 
 const ISSUER = "https://issuer.test";
 const VERIFIER_DID = "did:key:zVerifierClientIdForTest";
@@ -33,14 +33,19 @@ interface MintOpts {
   cnfMismatch?: boolean;
   wrongNonce?: boolean;
   wrongAudience?: boolean;
+  /** Name the issuer with a did:key (as moda does) instead of an https URL. */
+  didKeyIssuer?: boolean;
 }
 
 async function mint(opts: MintOpts = {}) {
   const issuer = await generateKeyPair("ES256", { extractable: true });
   const holder = await generateKeyPair("ES256", { extractable: true });
   const attacker = await generateKeyPair("ES256", { extractable: true });
-  const issuerPubJwk = { ...(await exportJWK(issuer.publicKey)), kid: "k1" };
+  const issuerPubRaw = (await exportJWK(issuer.publicKey)) as JWK & { kty: string; crv: string; x: string; y: string };
+  const issuerPubJwk = { ...issuerPubRaw, kid: "k1" };
   const holderPubJwk = await exportJWK(holder.publicKey);
+  // moda issuers name themselves with a did:key that embeds their key.
+  const iss = opts.didKeyIssuer ? jwkJcsPubDidKey(issuerPubRaw) : ISSUER;
 
   const discs = [disclosure("s1", "name", "測試持有人"), disclosure("s2", "id_number", "A123456789")];
   const digests = await Promise.all(discs.map(sha256b64url));
@@ -48,7 +53,7 @@ async function mint(opts: MintOpts = {}) {
   // Inner SD-JWT-VC: bound to the *holder* key via cnf, no KB-JWT.
   const issuerJwt = await new SignJWT({
     vct: "https://twdiw.test/DriverLicense",
-    iss: ISSUER,
+    iss,
     cnf: { jwk: holderPubJwk },
     _sd_alg: "sha-256",
     _sd: digests,
@@ -110,6 +115,17 @@ describe("verifyModaVpToken", () => {
     expect(r.vct).toBe("https://twdiw.test/DriverLicense");
     expect(r.claims?.name).toBe("測試持有人");
     expect(r.claims?.id_number).toBe("A123456789");
+  });
+
+  it("verifies a credential from a did:key issuer with no network fetch (the moda shape)", async () => {
+    const { vpToken } = await mint({ didKeyIssuer: true });
+    // No fetch mock: a did:key issuer must resolve locally. Make any network call fail.
+    globalThis.fetch = vi.fn(async () => new Response("no network", { status: 599 })) as typeof fetch;
+    const r = await verifyModaVpToken(vpToken, OK);
+    expect(r.ok).toBe(true);
+    expect(r.holderBound).toBe(true);
+    expect(r.issuer?.startsWith("did:key:z")).toBe(true);
+    expect(r.claims?.name).toBe("測試持有人");
   });
 
   it("rejects a presentation signed by a key other than the credential's cnf", async () => {
