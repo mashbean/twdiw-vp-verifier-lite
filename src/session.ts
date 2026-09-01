@@ -31,6 +31,21 @@ interface SessionState {
 const TTL_MS = 10 * 60 * 1000;
 const enc = new TextEncoder();
 
+export function requestedClaimNames(
+  credentialSource: "government" | "selfIssued",
+  mode: "age" | "general",
+): string[] {
+  const birthdayClaim = credentialSource === "selfIssued" ? "birthdate" : "roc_birthday";
+  if (mode === "age") return [birthdayClaim];
+
+  // A telecom card and a driving-licence card both carry `name`, but a telecom
+  // card deliberately carries no birthday. The previous general request asked
+  // every government card for both fields, so a real phone-number card could
+  // never answer even the non-age scenario. A general check now asks for the
+  // common field; the age scenario remains the explicit birthday-only path.
+  return credentialSource === "government" ? ["name"] : ["name", birthdayClaim];
+}
+
 function b64urlJSON(obj: unknown): string {
   const s = JSON.stringify(obj);
   let bin = "";
@@ -103,8 +118,8 @@ export class PresentationSession {
       // is included alongside `presentation_definition` for newer wallets.
       const header = { typ: "oauth-authz-req+jwt", alg: "ES256", kid: "verifier-did" };
       const isSelfIssued = s.credentialSource === "selfIssued";
-      const birthdayClaim = isSelfIssued ? "birthdate" : "roc_birthday";
       const credentialType = isSelfIssued ? "NationalIDCredential" : s.vct;
+      const requestedClaims = requestedClaimNames(s.credentialSource, s.mode ?? "general");
       const payload = {
         client_id: s.clientId,
         response_type: "vp_token",
@@ -122,18 +137,14 @@ export class PresentationSession {
                 : { "vc+sd-jwt": { "sd-jwt_alg_values": ["ES256"], "kb-jwt_alg_values": ["ES256"] } },
               // Age mode asks for the birthday and nothing else — the verifier turns
               // it into a yes/no answer, so it never sees name, ID number or address.
-              // General mode asks for a couple of claims so the disclosure picker has
-              // something to show. `name` / `roc_birthday` are on the driving-licence
-              // card; a card without them simply offers nothing to disclose.
+              // A general government check asks only for `name`, the field shared by
+              // the measured driving-licence and telecom-card paths. Self-issued
+              // national IDs can answer both name and birthdate.
               constraints: {
-                fields:
-                  s.mode === "age"
-                    ? [{ path: [`$.credentialSubject.${birthdayClaim}`] }]
-                    : [
-                        ...(credentialType ? [{ path: ["$.type"], filter: { type: "string", contains: { const: credentialType } } }] : []),
-                        { path: ["$.credentialSubject.name"] },
-                        { path: [`$.credentialSubject.${birthdayClaim}`] },
-                      ],
+                fields: [
+                  ...(credentialType ? [{ path: ["$.type"], filter: { type: "string", contains: { const: credentialType } } }] : []),
+                  ...requestedClaims.map((claim) => ({ path: [`$.credentialSubject.${claim}`] })),
+                ],
               },
             },
           ],

@@ -50,11 +50,11 @@ export const FRONTEND_HTML = /* html */ `<!doctype html>
   <div class="modes">
     <button class="mode" id="mode-general" aria-pressed="true">
       一般驗證
-      <small>出示證件，選擇性揭露欄位</small>
+      <small>政府卡只要求姓名；自發證件要求姓名與出生日期</small>
     </button>
     <button class="mode" id="mode-age" aria-pressed="false">
       最少欄位年齡驗證
-      <small>只要求出生日期；這不是零知識證明</small>
+      <small>只要求出生日期；門號卡不含生日，需使用駕照或自發證件</small>
     </button>
   </div>
 
