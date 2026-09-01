@@ -52,22 +52,20 @@ Deploy:
 npm run deploy
 ```
 
-**Live now** at **https://mashbean-vp-verifier.mashbean.workers.dev** (deployed
-2026-08-29). Open it in a browser to get a QR; the OIDC4VP flow — session mint,
-Authorization Request object, `direct_post` response, result poll — is verified live.
-`VERIFIER_ORIGIN` is left blank, so `response_uri` / `client_id` fall back to the
-request origin (the workers.dev URL), which is reachable — fine for the demo.
-
-To move it to **verifier.mashbean.net**: uncomment the `routes` block in
-`wrangler.toml` (the `mashbean.net` zone is on this account), redeploy, and set
-`VERIFIER_ORIGIN=https://verifier.mashbean.net` so the wallet posts back there.
+**Live now** at **https://verifier.mashbean.net**. Open it in a browser to get a
+QR; the OIDC4VP flow — session mint, Authorization Request object,
+`presentation_submission`, `direct_post` response and result poll — is hosted on
+the Cloudflare Worker + Durable Object deployment. `VERIFIER_ORIGIN` is pinned
+to that custom domain, so a request opened through another Worker hostname
+cannot silently change the audience or response endpoint.
 
 ## Before you trust a result — the real gate
 
-1. **Get a moda TWDIW test setup:** a test wallet, a test SD-JWT-VC credential, and
-   the issuer's JWKS / trust anchor. Set `TRUSTED_ISSUERS` (wrangler.toml `[vars]`,
-   or `wrangler secret`) to moda's `iss` so any other issuer is rejected. Without a
-   pinned issuer this verifies *any* resolvable signature — demo only.
+1. **Government issuer pin:** production is pinned to the exact `iss` carried by
+   the 2026-08-30 device-test card. The same DID was rechecked against the
+   official API and its current, non-revoked Arbitrum registry record on
+   2026-09-01. Government sessions fail closed if the configured list is empty;
+   adding another issuer requires the same independent check before deploy.
 2. **Confirm the `client_id` scheme the TWDIW wallet requires.** Phase 1 uses the
    unauthenticated `redirect_uri` scheme (`client_id == response_uri`). moda may
    require `x509_san_dns` (a signing cert whose SAN is `verifier.mashbean.net`,
@@ -81,8 +79,10 @@ To move it to **verifier.mashbean.net**: uncomment the `routes` block in
 - Signed request objects (`request_uri` → JAR) so the request is authenticated.
 - `direct_post.jwt` (encrypted responses).
 - `transaction_data` binding; an audit log (D1).
-- **ZK layer** — BBS-2023 / zk-SNARK predicate proofs, likely a separate off-edge
-  service behind the same `verify()` interface.
+- **ZK layer is deliberately not an OIDC `direct_post` response here.** The app's
+  verifier-first OpenAC age predicate uses a one-time request and local
+  Bluetooth return so its proof can be checked fully offline after public keys
+  are prepared.
 
 ## Notes
 

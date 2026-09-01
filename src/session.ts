@@ -5,7 +5,9 @@
 
 import { verifySdJwtVc } from "./verify";
 import { verifyModaVpToken } from "./moda";
+import { verifyMoicaVpToken } from "./moica";
 import { isAdultFromClaims } from "./age";
+import { validatePresentationSubmission } from "./presentation-submission";
 
 const ADULT_AGE = 18;
 
@@ -17,6 +19,7 @@ interface SessionState {
   vct?: string;              // the credential type this verifier is asking for
   /** "age" asks only for proof of adulthood (one field: the birthday). */
   mode?: "age" | "general";
+  credentialSource: "government" | "selfIssued";
   status: "pending" | "verified" | "failed";
   reason?: string;
   claims?: Record<string, unknown>;
@@ -67,15 +70,26 @@ export class PresentationSession {
     const op = url.pathname;
 
     if (op === "/init") {
-      const { clientId, responseUri, vct, mode } = (await req.json()) as {
+      const { clientId, responseUri, vct, mode, credentialSource } = (await req.json()) as {
         clientId: string;
         responseUri: string;
         vct?: string;
         mode?: "age" | "general";
+        credentialSource?: "government" | "selfIssued";
       };
       const nonce = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
       const state = crypto.randomUUID();
-      const s: SessionState = { nonce, state, clientId, responseUri, vct, mode: mode ?? "general", status: "pending", createdAt: Date.now() };
+      const s: SessionState = {
+        nonce,
+        state,
+        clientId,
+        responseUri,
+        vct,
+        mode: mode ?? "general",
+        credentialSource: credentialSource ?? "government",
+        status: "pending",
+        createdAt: Date.now(),
+      };
       await this.put(s);
       await this.state.storage.setAlarm(Date.now() + TTL_MS);
       return Response.json({ nonce, state });
@@ -88,6 +102,9 @@ export class PresentationSession {
       // request object to be a JWT signed by the key in `client_id`. `dcql_query`
       // is included alongside `presentation_definition` for newer wallets.
       const header = { typ: "oauth-authz-req+jwt", alg: "ES256", kid: "verifier-did" };
+      const isSelfIssued = s.credentialSource === "selfIssued";
+      const birthdayClaim = isSelfIssued ? "birthdate" : "roc_birthday";
+      const credentialType = isSelfIssued ? "NationalIDCredential" : s.vct;
       const payload = {
         client_id: s.clientId,
         response_type: "vp_token",
@@ -100,7 +117,9 @@ export class PresentationSession {
           input_descriptors: [
             {
               id: "cred",
-              format: { "vc+sd-jwt": { "sd-jwt_alg_values": ["ES256"], "kb-jwt_alg_values": ["ES256"] } },
+              format: isSelfIssued
+                ? { "vc+moica": { alg: ["RS256", "ES256"] } }
+                : { "vc+sd-jwt": { "sd-jwt_alg_values": ["ES256"], "kb-jwt_alg_values": ["ES256"] } },
               // Age mode asks for the birthday and nothing else — the verifier turns
               // it into a yes/no answer, so it never sees name, ID number or address.
               // General mode asks for a couple of claims so the disclosure picker has
@@ -109,17 +128,17 @@ export class PresentationSession {
               constraints: {
                 fields:
                   s.mode === "age"
-                    ? [{ path: ["$.credentialSubject.roc_birthday"] }]
+                    ? [{ path: [`$.credentialSubject.${birthdayClaim}`] }]
                     : [
-                        ...(s.vct ? [{ path: ["$.type"], filter: { type: "string", contains: { const: s.vct } } }] : []),
+                        ...(credentialType ? [{ path: ["$.type"], filter: { type: "string", contains: { const: credentialType } } }] : []),
                         { path: ["$.credentialSubject.name"] },
-                        { path: ["$.credentialSubject.roc_birthday"] },
+                        { path: [`$.credentialSubject.${birthdayClaim}`] },
                       ],
               },
             },
           ],
         },
-        dcql_query: {
+        dcql_query: isSelfIssued ? undefined : {
           credentials: [{ id: "cred", format: "dc+sd-jwt", meta: s.vct ? { vct_values: [s.vct] } : undefined }],
         },
       };
@@ -137,6 +156,16 @@ export class PresentationSession {
       if (s.status !== "pending") return Response.json({ status: s.status });
       const form = await req.formData();
       const vpToken = String(form.get("vp_token") ?? "");
+      const submissionError = validatePresentationSubmission(
+        String(form.get("presentation_submission") ?? ""),
+        s.credentialSource,
+      );
+      if (submissionError) {
+        s.status = "failed";
+        s.reason = submissionError;
+        await this.put(s);
+        return Response.json({ status: "failed", reason: submissionError }, { status: 400 });
+      }
       const postedState = form.get("state");
       if (postedState != null && String(postedState) !== s.state) {
         return Response.json({ status: "failed", reason: "state mismatch" }, { status: 400 });
@@ -148,11 +177,21 @@ export class PresentationSession {
         return Response.json({ status: "failed" }, { status: 400 });
       }
       const trustedIssuers = (this.env.TRUSTED_ISSUERS ?? "").split(",").map((x) => x.trim()).filter(Boolean);
-      // A standards SD-JWT-VC presentation carries `~`; a TWDIW/有備而來 VP JWT does
-      // not (it wraps the credential inside `vp.verifiableCredential`).
-      const result = vpToken.includes("~")
-        ? await verifySdJwtVc(vpToken, { expectedNonce: s.nonce, expectedAudience: s.clientId, trustedIssuers })
-        : await verifyModaVpToken(vpToken, { expectedNonce: s.nonce, expectedAudience: s.clientId, trustedIssuers });
+      if (s.credentialSource === "government" && trustedIssuers.length === 0) {
+        s.status = "failed";
+        s.reason = "verifier has no trusted government issuers configured";
+        await this.put(s);
+        return Response.json({ status: "failed", reason: s.reason }, { status: 503 });
+      }
+      // Dispatch from the request we issued, never by guessing from attacker-
+      // controlled token punctuation. A self-issued session accepts only the
+      // explicit `vc+moica` verifier; a government session keeps the two
+      // standards/TWDIW SD-JWT holder-binding dialects.
+      const result = s.credentialSource === "selfIssued"
+        ? await verifyMoicaVpToken(vpToken, { expectedNonce: s.nonce, expectedAudience: s.clientId })
+        : vpToken.includes("~")
+          ? await verifySdJwtVc(vpToken, { expectedNonce: s.nonce, expectedAudience: s.clientId, trustedIssuers })
+          : await verifyModaVpToken(vpToken, { expectedNonce: s.nonce, expectedAudience: s.clientId, trustedIssuers });
       s.status = result.ok ? "verified" : "failed";
       s.reason = result.reason;
       s.claims = result.claims;
@@ -178,6 +217,7 @@ export class PresentationSession {
         status: s.status,
         reason: s.reason,
         mode: s.mode,
+        credentialSource: s.credentialSource,
         vct: s.vct,
         adult: s.mode === "age" ? s.adult ?? undefined : undefined,
         adultAge: ADULT_AGE,

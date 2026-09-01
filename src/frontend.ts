@@ -37,13 +37,24 @@ export const FRONTEND_HTML = /* html */ `<!doctype html>
   <p class="subtitle">用「有備而來」掃描 QR，選擇要揭露的欄位後出示。</p>
 
   <div class="modes">
+    <button class="mode" id="source-government" aria-pressed="true">
+      政府皮夾卡片
+      <small>驗證政府卡的 SD-JWT 簽章與持有人綁定</small>
+    </button>
+    <button class="mode" id="source-self" aria-pressed="false">
+      自發 MyData 證件
+      <small>驗證 did:key、自然人憑證簽章與揭露承諾</small>
+    </button>
+  </div>
+
+  <div class="modes">
     <button class="mode" id="mode-general" aria-pressed="true">
       一般驗證
       <small>出示證件，選擇性揭露欄位</small>
     </button>
     <button class="mode" id="mode-age" aria-pressed="false">
-      年齡驗證：是否成年？
-      <small>只問「是否滿 18 歲」，不看姓名／證號</small>
+      最少欄位年齡驗證
+      <small>只要求出生日期；這不是零知識證明</small>
     </button>
   </div>
 
@@ -56,6 +67,7 @@ export const FRONTEND_HTML = /* html */ `<!doctype html>
 <script>
 let pollTimer = null;
 let mode = 'general';
+let credentialSource = 'government';
 
 function setMode(m) {
   mode = m;
@@ -64,12 +76,19 @@ function setMode(m) {
   start();
 }
 
+function setSource(source) {
+  credentialSource = source;
+  document.getElementById('source-government').setAttribute('aria-pressed', String(source === 'government'));
+  document.getElementById('source-self').setAttribute('aria-pressed', String(source === 'selfIssued'));
+  start();
+}
+
 async function start() {
   clearInterval(pollTimer);
   document.getElementById('again').style.display = 'none';
   document.getElementById('status').textContent = '等待出示…';
   document.getElementById('status').className = 'card';
-  const r = await fetch('/api/presentations', { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify({ vct: null, mode }) });
+  const r = await fetch('/api/presentations', { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify({ vct: null, mode, credentialSource }) });
   const { id, qr } = await r.json();
   const q = qrcode(0, 'M'); q.addData(qr); q.make();
   document.getElementById('qr').innerHTML = q.createImgTag(6, 8);
@@ -93,7 +112,7 @@ function render(s) {
     el.innerHTML =
       '<div class="verdict ' + (adult ? 'ok' : 'fail') + '">' + (adult ? '✓ 已滿 ' + age + ' 歲' : '✗ 未滿 ' + age + ' 歲') + '</div>' +
       '<div class="note">查驗方只要求了「出生日期」這一個欄位——<strong>沒有姓名、身分證字號、地址</strong>，' +
-      '而且只用來回答一個是非題。（若連生日都不想揭露，需零知識年齡證明，那是下一層。）</div>';
+      '再由本頁換算成年與否。查驗器仍看得到生日；這是選擇性揭露，不是零知識證明。</div>';
     return;
   }
 
@@ -116,6 +135,8 @@ function escapeHtml(x){return x.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','
 document.getElementById('again').onclick = start;
 document.getElementById('mode-general').onclick = () => setMode('general');
 document.getElementById('mode-age').onclick = () => setMode('age');
+document.getElementById('source-government').onclick = () => setSource('government');
+document.getElementById('source-self').onclick = () => setSource('selfIssued');
 start();
 </script>
 </body>

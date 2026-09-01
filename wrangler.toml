@@ -43,9 +43,10 @@ new_sqlite_classes = ["VerifierIdentity"]
 # The public origin the wallet will POST the vp_token back to. Set this to your
 # deployed URL (https://verifier.mashbean.net) so `response_uri` is reachable.
 # For `wrangler dev` it is filled in from the request origin if left blank.
-VERIFIER_ORIGIN = ""
+VERIFIER_ORIGIN = "https://verifier.mashbean.net"
 
-# Optional: pin the issuer(s) you trust (moda's TWDIW issuer). Comma-separated
-# `iss` values. Empty = accept any issuer whose JWKS resolves (demo only — set this
-# to moda's issuer before trusting a result).
-TRUSTED_ISSUERS = ""
+# Pin the exact production issuer carried by the government-wallet card from
+# the 2026-08-30 device run. This DID is independently present in the official
+# API + Arbitrum trust snapshot captured by the wallet; an empty list would turn
+# this deployment back into a demo that accepts any resolvable did:key.
+TRUSTED_ISSUERS = "did:key:z2dmzD81cgPx8Vki7JbuuMmFYrWPgYoytykUZ3eyqht1j9Kbptwspp6uLnxpQQwn6TjHDw31q6bpSprrhMuKSkozn8R25MLf5g5H64FpiFmhCxKiU7JpU5dgBx3UbiSunqJ2a1athYQ88y4gYigJJefB1mybvtAssdMu2BUS3MwFe6pg4C"

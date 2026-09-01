@@ -49,7 +49,11 @@ export default {
 
     // 1. Create a presentation session.
     if (req.method === "POST" && path === "/api/presentations") {
-      const body = (await req.json().catch(() => ({}))) as { vct?: string | null; mode?: "age" | "general" };
+      const body = (await req.json().catch(() => ({}))) as {
+        vct?: string | null;
+        mode?: "age" | "general";
+        credentialSource?: "government" | "selfIssued";
+      };
       const id = crypto.randomUUID();
       const base = origin(req, env);
       const responseUri = `${base}/api/response/${id}`;
@@ -60,7 +64,13 @@ export default {
       await session(env, id).call("/init", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ clientId, responseUri, vct: body.vct ?? undefined, mode: body.mode ?? "general" }),
+        body: JSON.stringify({
+          clientId,
+          responseUri,
+          vct: body.vct ?? undefined,
+          mode: body.mode ?? "general",
+          credentialSource: body.credentialSource ?? "government",
+        }),
       });
       const requestUri = `${base}/api/request/${id}`;
       const qr = `openid4vp://?client_id=${encodeURIComponent(clientId)}&request_uri=${encodeURIComponent(requestUri)}`;
