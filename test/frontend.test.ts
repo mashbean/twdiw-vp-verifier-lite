@@ -12,6 +12,12 @@ describe("landing page", () => {
     expect(FRONTEND_HTML).toContain("開始前常見的問題");
   });
 
+  it("publishes a large link preview", () => {
+    expect(FRONTEND_HTML).toContain('property="og:image" content="https://mashbean.net/images/works/twdiw-vp-verifier-lite.jpg"');
+    expect(FRONTEND_HTML).toContain('name="twitter:card" content="summary_large_image"');
+    expect(FRONTEND_HTML).toContain('property="og:url" content="https://verifier.mashbean.net/"');
+  });
+
   it("defaults to the official wallet and switches directly to Bonds", () => {
     expect(FRONTEND_HTML).toContain("數位憑證皮夾</strong><small>數位發展部公開版本 · 預設");
     expect(FRONTEND_HTML).toContain("id=\"wallet-bonds\"");

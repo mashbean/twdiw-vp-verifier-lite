@@ -4,6 +4,20 @@ export const FRONTEND_HTML = /* html */ `<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="支援數位發展部數位憑證皮夾的一鍵部署 OIDC4VP 驗證服務">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="請出示皮夾">
+  <meta property="og:title" content="請出示皮夾｜輕量化查驗證件，支援數位皮夾">
+  <meta property="og:description" content="支援數位發展部數位憑證皮夾，讓你可以一鍵建立自己的驗證服務。">
+  <meta property="og:url" content="https://verifier.mashbean.net/">
+  <meta property="og:image" content="https://mashbean.net/images/works/twdiw-vp-verifier-lite.jpg">
+  <meta property="og:image:alt" content="請出示皮夾開源數位皮夾查驗服務首頁">
+  <meta property="og:image:width" content="960">
+  <meta property="og:image:height" content="504">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="請出示皮夾｜輕量化查驗證件，支援數位皮夾">
+  <meta name="twitter:description" content="支援數位發展部數位憑證皮夾，讓你可以一鍵建立自己的驗證服務。">
+  <meta name="twitter:image" content="https://mashbean.net/images/works/twdiw-vp-verifier-lite.jpg">
+  <meta name="twitter:image:alt" content="請出示皮夾開源數位皮夾查驗服務首頁">
   <title>請出示皮夾｜輕量化數位皮夾查驗</title>
   <link rel="stylesheet" href="/app.css">
   <script src="/app.js" defer></script>
