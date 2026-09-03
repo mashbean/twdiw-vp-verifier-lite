@@ -145,16 +145,26 @@ export async function verifyMoicaVpToken(vpToken: string, opts: MoicaVerifyOptio
         || (validUntil && (!Number.isFinite(validUntil.getTime()) || now >= validUntil))) {
       return { ok: false, reason: "self-issued credential is outside its validity window" };
     }
-    if (outer.iss !== holderDid || outer.sub !== holderDid) {
-      return { ok: false, reason: "presentation holder does not match the credential subject" };
-    }
     const didJwk = resolveDidKeyToJwk(holderDid);
     if (!didJwk) return { ok: false, reason: "unsupported holder did:key" };
-    const [didThumb, outerThumb] = await Promise.all([
+    const presentationIssuer = typeof outer.iss === "string" ? resolveDidKeyToJwk(outer.iss) : null;
+    const presentationSubject = typeof outer.sub === "string" ? resolveDidKeyToJwk(outer.sub) : null;
+    if (!presentationIssuer || !presentationSubject) {
+      return { ok: false, reason: "presentation holder does not match the credential subject" };
+    }
+    // Bonds historically encoded the credential subject as `p256-pub`, while
+    // its OIDC4VP wrapper uses `jwk_jcs-pub`. The DID strings differ but carry
+    // the same P-256 key. Compare the resolved key material so this remains a
+    // holder-binding check rather than an accidental serialization check.
+    const [didThumb, issuerThumb, subjectThumb, outerThumb] = await Promise.all([
       calculateJwkThumbprint(didJwk),
+      calculateJwkThumbprint(presentationIssuer),
+      calculateJwkThumbprint(presentationSubject),
       calculateJwkThumbprint(outerHeader.jwk),
     ]);
-    if (didThumb !== outerThumb) return { ok: false, reason: "presentation key does not match the self-issued card DID" };
+    if (didThumb !== issuerThumb || didThumb !== subjectThumb || didThumb !== outerThumb) {
+      return { ok: false, reason: "presentation key does not match the self-issued card DID" };
+    }
 
     // 2. Per-card did:key signature over exactly the payload the citizen card signed.
     const issuerHeader = decodeProtectedHeader(envelope.issuerJWS) as { alg?: string; typ?: string; cty?: string; kid?: string };

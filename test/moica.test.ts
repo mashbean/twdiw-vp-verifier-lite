@@ -5,7 +5,7 @@ import "reflect-metadata";
 import { X509CertificateGenerator, cryptoProvider } from "@peculiar/x509";
 import { CompactSign, SignJWT, exportJWK, generateKeyPair, type JWK } from "jose";
 import { describe, expect, it } from "vitest";
-import { p256DidKey } from "../src/didkey";
+import { jwkJcsPubDidKey, p256DidKey } from "../src/didkey";
 import { verifyMoicaVpToken } from "../src/moica";
 
 const VERIFIER_DID = "did:key:zVerifierClientIdForMoicaTest";
@@ -32,7 +32,12 @@ async function digestDisclosure(value: string): Promise<string> {
   return b64url(new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(value))));
 }
 
-interface MintOptions { badDisclosure?: boolean; badCardSignature?: boolean; wrongNonce?: boolean }
+interface MintOptions {
+  badDisclosure?: boolean;
+  badCardSignature?: boolean;
+  wrongNonce?: boolean;
+  presentationDid?: "same" | "equivalent" | "unsupported";
+}
 
 async function mint(options: MintOptions = {}) {
   cryptoProvider.set(crypto as never);
@@ -72,6 +77,11 @@ async function mint(options: MintOptions = {}) {
 
   const holderJwk = await exportJWK(holderKeys.publicKey) as JWK & { x: string; y: string };
   const holderDid = p256DidKey(holderJwk);
+  const presentationDid = options.presentationDid === "equivalent"
+    ? jwkJcsPubDidKey(holderJwk)
+    : options.presentationDid === "unsupported"
+      ? "did:key:zUnsupportedHolder"
+      : holderDid;
   const nameDisclosure = b64url(enc.encode(JSON.stringify(["salt-1", "name", "測試持有人"])));
   const birthdayDisclosure = b64url(enc.encode(JSON.stringify(["salt-2", "birthdate", "民國083年03月06日"])));
   const credential = {
@@ -108,8 +118,8 @@ async function mint(options: MintOptions = {}) {
     disclosures,
   });
   const vpToken = await new SignJWT({
-    iss: holderDid,
-    sub: holderDid,
+    iss: presentationDid,
+    sub: presentationDid,
     nonce: options.wrongNonce ? "wrong" : NONCE,
     vp: {
       context: ["https://www.w3.org/2018/credentials/v1"],
@@ -143,6 +153,20 @@ describe("verifyMoicaVpToken", () => {
     expect(result.keyBound).toBe(true);
     expect(result.vct).toBe("NationalIDCredential");
     expect(result.claims).toEqual({ name: "測試持有人", birthdate: "民國083年03月06日" });
+  }, 15_000);
+
+  it("accepts equivalent p256-pub and jwk_jcs-pub spellings of the same holder key", async () => {
+    const fixture = await mint({ presentationDid: "equivalent" });
+    const result = await verifyMoicaVpToken(fixture.vpToken, fixture.options);
+    expect(result.ok).toBe(true);
+    expect(result.keyBound).toBe(true);
+  }, 15_000);
+
+  it("rejects a presentation holder DID that cannot resolve to the card key", async () => {
+    const fixture = await mint({ presentationDid: "unsupported" });
+    const result = await verifyMoicaVpToken(fixture.vpToken, fixture.options);
+    expect(result.ok).toBe(false);
+    expect(result.reason).toMatch(/presentation holder/);
   }, 15_000);
 
   it("rejects a disclosure not committed by the twice-signed payload", async () => {
