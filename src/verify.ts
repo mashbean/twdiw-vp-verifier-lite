@@ -158,6 +158,61 @@ async function inflate(bytes: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
+async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {
+  const stream = new Response(bytes).body!.pipeThrough(new DecompressionStream("gzip"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const pad = normalized.length % 4 === 0 ? "" : "=".repeat(4 - (normalized.length % 4));
+  return Uint8Array.from(atob(normalized + pad), (character) => character.charCodeAt(0));
+}
+
+function twdiwStatusEntries(payload: Record<string, unknown>): Array<{
+  index: number;
+  uri: string;
+  purpose: string;
+}> {
+  const vc = payload.vc as Record<string, unknown> | undefined;
+  const raw = vc?.credentialStatus;
+  const entries = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  return entries.flatMap((value) => {
+    if (!value || typeof value !== "object") return [];
+    const entry = value as Record<string, unknown>;
+    const index = Number(entry.statusListIndex);
+    const uri = typeof entry.statusListCredential === "string" ? entry.statusListCredential : "";
+    if (!Number.isSafeInteger(index) || index < 0 || !uri) return [];
+    return [{ index, uri, purpose: String(entry.statusPurpose ?? "revocation") }];
+  });
+}
+
+/** TWDIW currently publishes StatusList2021 JWTs whose VC credentialSubject has
+ * a gzip+base64 `encodedList`. The bit order is MSB-first, matching the official
+ * verifier implementation's 0x80 → 0x01 mask table. */
+async function checkTwdiwStatusList(entry: { index: number; uri: string; purpose: string }): Promise<RevocationStatus> {
+  const response = await fetch(entry.uri, { headers: { accept: "application/vc+jwt, application/jwt" } });
+  if (!response.ok) throw new Error(`status list ${response.status}`);
+  const token = (await response.text()).trim();
+  const header = decodeProtectedHeader(token) as { alg?: string; kid?: string };
+  const unverified = decodeJwt(token) as Record<string, unknown>;
+  const issuer = String(unverified.iss ?? "");
+  if (!issuer) throw new Error("status list has no iss");
+  const getKey = await issuerKeySet(issuer);
+  const { payload } = await jwtVerify(token, (await getKey(header)) as never);
+  if (payload.sub && String(payload.sub) !== entry.uri) throw new Error("status list sub != uri");
+  const statusVc = payload.vc as Record<string, unknown> | undefined;
+  const subject = statusVc?.credentialSubject as Record<string, unknown> | undefined;
+  const encodedList = typeof subject?.encodedList === "string" ? subject.encodedList : "";
+  if (!encodedList) throw new Error("status list has no encodedList");
+  const bytes = await gunzip(base64ToBytes(encodedList));
+  const byte = bytes[Math.floor(entry.index / 8)];
+  if (byte === undefined) throw new Error("status list index is out of range");
+  const revoked = (byte & (0x80 >> (entry.index % 8))) !== 0;
+  if (!revoked) return "valid";
+  return entry.purpose.toLowerCase().includes("suspend") ? "suspended" : "revoked";
+}
+
 /**
  * Token Status List revocation check (draft-ietf-oauth-status-list). Returns
  * "unknown" (never throws) when the credential carries no status claim or the list
@@ -166,7 +221,17 @@ async function inflate(bytes: Uint8Array): Promise<Uint8Array> {
 async function checkRevocation(payload: Record<string, unknown>): Promise<{ status: RevocationStatus; reason?: string }> {
   const ref = (payload.status as { status_list?: { idx?: number; uri?: string } } | undefined)?.status_list;
   if (!ref || typeof ref.idx !== "number" || typeof ref.uri !== "string") {
-    return { status: "unknown", reason: "no status_list reference" };
+    const twdiwEntries = twdiwStatusEntries(payload);
+    if (!twdiwEntries.length) return { status: "unknown", reason: "no supported status-list reference" };
+    try {
+      for (const entry of twdiwEntries) {
+        const status = await checkTwdiwStatusList(entry);
+        if (status !== "valid") return { status };
+      }
+      return { status: "valid" };
+    } catch (error) {
+      return { status: "unknown", reason: error instanceof Error ? error.message : "TWDIW status check error" };
+    }
   }
   try {
     const res = await fetch(ref.uri, { headers: { accept: "application/statuslist+jwt" } });
@@ -209,6 +274,7 @@ export async function verifyIssuerCredential(
   trustedIssuers: string[],
 ): Promise<IssuerCredentialResult> {
   const header = decodeProtectedHeader(issuerJwt) as { alg?: string; kid?: string; typ?: string };
+  if (header.alg !== "ES256") return { ok: false, reason: "credential must use ES256" };
   const payload = decodeJwt(issuerJwt) as Record<string, unknown>;
   const iss = String(payload.iss ?? "");
   if (!iss) return { ok: false, reason: "no iss in credential" };
@@ -259,6 +325,8 @@ export async function verifySdJwtVc(vpToken: string, opts: VerifyOptions): Promi
     const kbJwt = endsWithTilde ? undefined : parts[parts.length - 1];
     const disclosures = parts.slice(1, parts.length - 1);
 
+    if (!kbJwt) return { ok: false, reason: "presentation has no key-binding JWT" };
+
     const base = await verifyIssuerCredential(issuerJwt, disclosures, opts.trustedIssuers);
     if (!base.ok) return { ok: false, reason: base.reason, vct: base.vct, issuer: base.issuer, status: base.status };
 
@@ -266,6 +334,7 @@ export async function verifySdJwtVc(vpToken: string, opts: VerifyOptions): Promi
     if (kbJwt) {
       if (!base.cnf) return { ok: false, reason: "credential has no cnf key for key binding" };
       const kbHeader = decodeProtectedHeader(kbJwt) as { alg?: string };
+      if (kbHeader.alg !== "ES256") return { ok: false, reason: "key-binding JWT must use ES256" };
       const kbKey = await importJWK(base.cnf, kbHeader.alg ?? "ES256");
       const { payload: kbPayload } = await jwtVerify(kbJwt, kbKey as never, { audience: opts.expectedAudience });
       if (kbPayload.nonce !== opts.expectedNonce) return { ok: false, reason: "key-binding nonce mismatch" };

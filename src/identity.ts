@@ -10,18 +10,15 @@
 // Web Crypto ECDSA/P-256 signatures are raw `r‖s` — exactly what the wallet's
 // `P256.Signing.ECDSASignature(rawRepresentation:)` and JOSE ES256 both expect.
 
+import { DurableObject } from "cloudflare:workers";
 import { p256DidKey } from "./didkey";
 
-export class VerifierIdentity {
-  private state: DurableObjectState;
-  constructor(state: DurableObjectState) {
-    this.state = state;
-  }
+export class VerifierIdentity extends DurableObject<Env> {
 
   private async ensure(): Promise<{ priv: JsonWebKey; pub: JsonWebKey; didKey: string }> {
-    const storedPriv = await this.state.storage.get<JsonWebKey>("privateJwk");
-    const storedPub = await this.state.storage.get<JsonWebKey>("publicJwk");
-    const storedDid = await this.state.storage.get<string>("didKey");
+    const storedPriv = await this.ctx.storage.get<JsonWebKey>("privateJwk");
+    const storedPub = await this.ctx.storage.get<JsonWebKey>("publicJwk");
+    const storedDid = await this.ctx.storage.get<string>("didKey");
     if (storedPriv && storedPub && storedDid) {
       return { priv: storedPriv, pub: storedPub, didKey: storedDid };
     }
@@ -33,36 +30,30 @@ export class VerifierIdentity {
     const priv = (await crypto.subtle.exportKey("jwk", pair.privateKey)) as JsonWebKey;
     const pub = (await crypto.subtle.exportKey("jwk", pair.publicKey)) as JsonWebKey;
     const didKey = p256DidKey({ x: pub.x!, y: pub.y! });
-    await this.state.storage.put({ privateJwk: priv, publicJwk: pub, didKey });
+    await this.ctx.storage.put({ privateJwk: priv, publicJwk: pub, didKey });
     return { priv, pub, didKey };
   }
 
-  async fetch(req: Request): Promise<Response> {
-    const op = new URL(req.url).pathname;
-    const { priv, pub, didKey } = await this.ensure();
+  async identity(): Promise<{ didKey: string; publicJwk: JsonWebKey }> {
+    const { pub, didKey } = await this.ensure();
+    return { didKey, publicJwk: { kty: pub.kty, crv: pub.crv, x: pub.x, y: pub.y } };
+  }
 
-    if (op === "/identity") {
-      return Response.json({ didKey, publicJwk: { kty: pub.kty, crv: pub.crv, x: pub.x, y: pub.y } });
-    }
-
-    if (op === "/sign") {
-      const { input } = (await req.json()) as { input: string };
-      const key = await crypto.subtle.importKey(
-        "jwk",
-        priv,
-        { name: "ECDSA", namedCurve: "P-256" },
-        false,
-        ["sign"],
-      );
-      const raw = new Uint8Array(
-        await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, new TextEncoder().encode(input)),
-      );
-      let s = "";
-      for (const b of raw) s += String.fromCharCode(b);
-      const signature = btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-      return Response.json({ signature });
-    }
-
-    return new Response("not found", { status: 404 });
+  async sign(input: string): Promise<string> {
+    if (input.length > 128_000) throw new Error("signing input is too large");
+    const { priv } = await this.ensure();
+    const key = await crypto.subtle.importKey(
+      "jwk",
+      priv,
+      { name: "ECDSA", namedCurve: "P-256" },
+      false,
+      ["sign"],
+    );
+    const raw = new Uint8Array(
+      await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, new TextEncoder().encode(input)),
+    );
+    let encoded = "";
+    for (const byte of raw) encoded += String.fromCharCode(byte);
+    return btoa(encoded).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   }
 }

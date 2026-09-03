@@ -45,11 +45,25 @@ async function deflate(bytes: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
+async function gzip(bytes: Uint8Array): Promise<Uint8Array> {
+  const cs = new CompressionStream("gzip");
+  const stream = new Response(bytes).body!.pipeThrough(cs);
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+function standardBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
 interface MintOpts {
   /** If set, the credential carries a status_list ref and this value is written at STATUS_IDX. */
   status?: number;
   /** Bits per status list entry. Must be >= 2 to represent status 2 (suspended). */
   statusBits?: number;
+  /** TWDIW's StatusList2021 profile: 0 active, 1 revoked. */
+  twdiwStatus?: number;
   omitDisclosures?: boolean;
   /** Sign the key-binding JWT with a key other than the credential's `cnf` key. */
   holderMismatch?: boolean;
@@ -74,6 +88,17 @@ async function mint(opts: MintOpts = {}) {
     _sd_alg: "sha-256",
     ...(digests.length ? { _sd: digests } : {}),
     ...(opts.status !== undefined ? { status: { status_list: { idx: STATUS_IDX, uri: STATUS_URI } } } : {}),
+    ...(opts.twdiwStatus !== undefined ? {
+      vc: {
+        type: ["VerifiableCredential", "TestCredential"],
+        credentialStatus: {
+          type: "StatusList2021Entry",
+          statusPurpose: "revocation",
+          statusListIndex: String(STATUS_IDX),
+          statusListCredential: STATUS_URI,
+        },
+      },
+    } : {}),
   };
   const issuerJwt = await new SignJWT(payload)
     .setProtectedHeader({ alg: "ES256", typ: "vc+sd-jwt", kid: "k1" })
@@ -104,6 +129,21 @@ async function mint(opts: MintOpts = {}) {
     statusListJwt = await new SignJWT({ iss: ISSUER, sub: STATUS_URI, status_list: { bits, lst: b64urlBytes(await deflate(lst)) } })
       .setProtectedHeader({ alg: "ES256", typ: "statuslist+jwt", kid: "k1" })
       .setIssuedAt()
+      .sign(issuer.privateKey);
+  } else if (opts.twdiwStatus !== undefined) {
+    const list = new Uint8Array(Math.floor(STATUS_IDX / 8) + 1);
+    if (opts.twdiwStatus === 1) list[Math.floor(STATUS_IDX / 8)] |= 0x80 >> (STATUS_IDX % 8);
+    statusListJwt = await new SignJWT({
+      iss: ISSUER,
+      sub: STATUS_URI,
+      vc: {
+        type: ["VerifiableCredential", "StatusList2021Credential"],
+        credentialSubject: { statusPurpose: "revocation", encodedList: standardBase64(await gzip(list)) },
+      },
+    })
+      .setProtectedHeader({ alg: "ES256", typ: "JWT", kid: "k1" })
+      .setNotBefore(Math.floor(Date.now() / 1000) - 1)
+      .setExpirationTime("1h")
       .sign(issuer.privateKey);
   }
 
@@ -167,6 +207,22 @@ describe("verifySdJwtVc", () => {
     expect(r.status).toBe("suspended");
   });
 
+  it("accepts an active TWDIW StatusList2021 entry", async () => {
+    const { token, issuerPubJwk, statusListJwt } = await mint({ twdiwStatus: 0 });
+    mockFetch(issuerPubJwk, statusListJwt);
+    const result = await verifySdJwtVc(token, OK_OPTS);
+    expect(result.ok).toBe(true);
+    expect(result.status).toBe("valid");
+  });
+
+  it("rejects a revoked TWDIW StatusList2021 entry using its MSB-first bit order", async () => {
+    const { token, issuerPubJwk, statusListJwt } = await mint({ twdiwStatus: 1 });
+    mockFetch(issuerPubJwk, statusListJwt);
+    const result = await verifySdJwtVc(token, OK_OPTS);
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe("revoked");
+  });
+
   it("rejects a replayed nonce", async () => {
     const { token, issuerPubJwk } = await mint({ wrongNonce: true });
     mockFetch(issuerPubJwk);
@@ -203,5 +259,14 @@ describe("verifySdJwtVc", () => {
     const r = await verifySdJwtVc(token, OK_OPTS);
     expect(r.ok).toBe(true);
     expect(r.keyBound).toBe(true);
+  });
+
+  it("rejects a bare SD-JWT credential without holder binding", async () => {
+    const { token, issuerPubJwk } = await mint();
+    mockFetch(issuerPubJwk);
+    const bare = token.slice(0, token.lastIndexOf("~") + 1);
+    const result = await verifySdJwtVc(bare, OK_OPTS);
+    expect(result.ok).toBe(false);
+    expect(result.reason).toMatch(/key-binding/);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseRocDate, isAtLeastAge, isAdultFromClaims, findClaim } from "../src/age";
+import { parseRocDate, parseFlexibleBirthDate, isAtLeastAge, isAdultFromClaims, findClaim } from "../src/age";
 
 // 2026-08-30, as a fixed clock so the tests are deterministic.
 const NOW = Date.UTC(2026, 7, 30);
@@ -37,6 +37,10 @@ describe("isAtLeastAge", () => {
 });
 
 describe("findClaim / isAdultFromClaims", () => {
+  it("parses the self-issued MyData date spelling", () => {
+    expect(parseFlexibleBirthDate("民國083年03月06日")).toEqual({ year: 1994, month: 3, day: 6 });
+    expect(isAdultFromClaims({ birthdate: "民國083年03月06日" }, 18, NOW)).toBe(true);
+  });
   it("finds roc_birthday nested under vc.credentialSubject (the TWDIW shape)", () => {
     const claims = { iss: "did:key:z…", vc: { credentialSubject: { roc_birthday: "0570605" } } };
     expect(findClaim(claims, "roc_birthday")).toBe("0570605");

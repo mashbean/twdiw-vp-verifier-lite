@@ -1,104 +1,149 @@
-// OIDC4VP verifier (VP host) — Worker entry.
-//
-// Flow (OpenID4VP 1.0, cross-device, direct_post):
-//   1. front-end  POST /api/presentations  → mint a session (Durable Object),
-//      return the openid4vp:// QR payload (client_id = the verifier's did:key).
-//   2. wallet scans → GET /api/request/:id  → a SIGNED Authorization Request (JAR),
-//      signed by the key in client_id — which the 有備而來 wallet requires.
-//   3. wallet      POST /api/response/:id    → the vp_token (direct_post); we verify.
-//      Two dialects accepted: a standards SD-JWT-VC, or a TWDIW VP JWT wrapping one.
-//   4. front-end   GET /api/result/:id       → the verdict + disclosed claims.
-//
-// The verifier's identity (the P-256 key behind its did:key) is a singleton Durable
-// Object, generated once and persisted — see src/identity.ts.
-
+import qrcode from "qrcode-generator";
 import { PresentationSession } from "./session";
 import { VerifierIdentity } from "./identity";
-import { FRONTEND_HTML } from "./frontend";
+import { FRONTEND_CSS, FRONTEND_HTML, FRONTEND_JS } from "./frontend";
+import { getProfile, getVariant, publicProfiles, type CredentialSource } from "./profiles";
 
 export { PresentationSession, VerifierIdentity };
 
-function origin(req: Request, env: Env): string {
-  if (env.VERIFIER_ORIGIN) return env.VERIFIER_ORIGIN.replace(/\/$/, "");
-  return new URL(req.url).origin;
+const MAX_CREATE_BODY = 8_192;
+const MAX_PRESENTATION_BODY = 512_000;
+
+function publicOrigin(request: Request, env: Env): string {
+  const configured = env.VERIFIER_ORIGIN?.trim();
+  return configured ? configured.replace(/\/$/, "") : new URL(request.url).origin;
 }
 
-function session(env: Env, id: string) {
-  const stub = env.SESSIONS.get(env.SESSIONS.idFromName(id));
-  return {
-    call: (op: string, init?: RequestInit) => stub.fetch("https://do" + op, init),
+function securityHeaders(request: Request): HeadersInit {
+  const headers: Record<string, string> = {
+    "content-security-policy": "default-src 'self'; base-uri 'none'; connect-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self'",
+    "cross-origin-opener-policy": "same-origin",
+    "permissions-policy": "camera=(), microphone=(), geolocation=()",
+    "referrer-policy": "no-referrer",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
   };
+  if (new URL(request.url).protocol === "https:") headers["strict-transport-security"] = "max-age=31536000; includeSubDomains";
+  return headers;
 }
 
-async function verifierDidKey(env: Env): Promise<string> {
-  const stub = env.IDENTITY.get(env.IDENTITY.idFromName("verifier"));
-  const res = await stub.fetch("https://id/identity");
-  const { didKey } = (await res.json()) as { didKey: string };
-  return didKey;
+function respond(request: Request, body: BodyInit | null, init: ResponseInit = {}): Response {
+  const headers = new Headers(init.headers);
+  for (const [name, value] of Object.entries(securityHeaders(request))) headers.set(name, value);
+  return new Response(body, { ...init, headers });
+}
+
+function json(request: Request, value: unknown, init: ResponseInit = {}): Response {
+  const headers = new Headers(init.headers);
+  headers.set("content-type", "application/json; charset=utf-8");
+  headers.set("cache-control", "no-store");
+  return respond(request, JSON.stringify(value), { ...init, headers });
+}
+
+function staticAsset(request: Request, body: string, type: string): Response {
+  return respond(request, body, {
+    headers: { "content-type": `${type}; charset=utf-8`, "cache-control": "public, max-age=300" },
+  });
+}
+
+function qrSvg(payload: string): string {
+  const code = qrcode(0, "M");
+  code.addData(payload);
+  code.make();
+  return code.createSvgTag(5, 8);
+}
+
+function validSessionId(value: string): boolean {
+  return /^[0-9a-f-]{36}$/.test(value);
 }
 
 export default {
-  async fetch(req: Request, env: Env): Promise<Response> {
-    const url = new URL(req.url);
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
     const path = url.pathname;
 
-    // Front-end.
-    if (req.method === "GET" && (path === "/" || path === "/index.html")) {
-      return new Response(FRONTEND_HTML, { headers: { "content-type": "text/html; charset=utf-8" } });
+    if (request.method === "GET" && (path === "/" || path === "/index.html")) {
+      return staticAsset(request, FRONTEND_HTML, "text/html");
+    }
+    if (request.method === "GET" && path === "/app.css") return staticAsset(request, FRONTEND_CSS, "text/css");
+    if (request.method === "GET" && path === "/app.js") return staticAsset(request, FRONTEND_JS, "text/javascript");
+
+    if (request.method === "GET" && path === "/api/profiles") {
+      return json(request, {
+        protocolProfile: "TWDIW Presentation Exchange + OIDC4VP 1.0 DCQL compatibility",
+        profiles: publicProfiles(),
+      });
     }
 
-    // 1. Create a presentation session.
-    if (req.method === "POST" && path === "/api/presentations") {
-      const body = (await req.json().catch(() => ({}))) as {
-        vct?: string | null;
-        mode?: "age" | "general";
-        credentialSource?: "government" | "selfIssued";
-      };
+    if (request.method === "GET" && path === "/api/verifier") {
+      const identity = await env.IDENTITY.getByName("verifier").identity();
+      return json(request, {
+        didKey: identity.didKey,
+        origin: publicOrigin(request, env),
+        officialTrustRegistry: env.OFFICIAL_TRUST_REGISTRY_URL,
+      });
+    }
+
+    if (request.method === "POST" && path === "/api/presentations") {
+      const declaredLength = Number(request.headers.get("content-length") ?? 0);
+      if (declaredLength > MAX_CREATE_BODY) return json(request, { error: "request body is too large" }, { status: 413 });
+      const raw = await request.text();
+      if (raw.length > MAX_CREATE_BODY) return json(request, { error: "request body is too large" }, { status: 413 });
+      let body: { profileId?: unknown; credentialSource?: unknown };
+      try { body = raw ? JSON.parse(raw) as typeof body : {}; }
+      catch { return json(request, { error: "request body must be JSON" }, { status: 400 }); }
+      const profile = getProfile(typeof body.profileId === "string" ? body.profileId : "adult-18");
+      const source = body.credentialSource as CredentialSource;
+      if (!profile || !["government", "selfIssued"].includes(source) || !getVariant(profile, source)) {
+        return json(request, { error: "unsupported profile or credential source" }, { status: 400 });
+      }
+
       const id = crypto.randomUUID();
-      const base = origin(req, env);
-      const responseUri = `${base}/api/response/${id}`;
-      // The wallet takes the request-signing key from client_id, so it must be the
-      // verifier's did:key — not the response_uri (that redirect_uri scheme is what
-      // the 有備而來 wallet rejects).
-      const clientId = await verifierDidKey(env);
-      await session(env, id).call("/init", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          clientId,
-          responseUri,
-          vct: body.vct ?? undefined,
-          mode: body.mode ?? "general",
-          credentialSource: body.credentialSource ?? "government",
-        }),
+      const resultKey = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
+      const origin = publicOrigin(request, env);
+      const responseUri = `${origin}/api/response/${id}`;
+      const identity = await env.IDENTITY.getByName("verifier").identity();
+      await env.SESSIONS.getByName(id).init({
+        clientId: identity.didKey,
+        responseUri,
+        resultKey,
+        profileId: profile.id,
+        credentialSource: source,
       });
-      const requestUri = `${base}/api/request/${id}`;
-      const qr = `openid4vp://?client_id=${encodeURIComponent(clientId)}&request_uri=${encodeURIComponent(requestUri)}`;
-      return Response.json({ id, qr, requestUri, responseUri, clientId });
+      const requestUri = `${origin}/api/request/${id}`;
+      const qr = `openid4vp://?client_id=${encodeURIComponent(identity.didKey)}&request_uri=${encodeURIComponent(requestUri)}`;
+      return json(request, { id, resultKey, qr, qrSvg: qrSvg(qr), requestUri, responseUri, clientId: identity.didKey });
     }
 
-    // 2. The signed Authorization Request the wallet fetches.
-    const reqMatch = path.match(/^\/api\/request\/([0-9a-f-]{36})$/);
-    if (req.method === "GET" && reqMatch) {
-      return session(env, reqMatch[1]).call("/request");
-    }
-
-    // 3. direct_post from the wallet.
-    const resMatch = path.match(/^\/api\/response\/([0-9a-f-]{36})$/);
-    if (req.method === "POST" && resMatch) {
-      return session(env, resMatch[1]).call("/response", {
-        method: "POST",
-        headers: { "content-type": req.headers.get("content-type") ?? "application/x-www-form-urlencoded" },
-        body: await req.arrayBuffer(),
+    const requestMatch = path.match(/^\/api\/request\/([0-9a-f-]{36})$/);
+    if (request.method === "GET" && requestMatch && validSessionId(requestMatch[1])) {
+      const object = await env.SESSIONS.getByName(requestMatch[1]).requestObject();
+      if (!object) return respond(request, "gone", { status: 404, headers: { "cache-control": "no-store" } });
+      return respond(request, object, {
+        headers: { "content-type": "application/oauth-authz-req+jwt", "cache-control": "no-store" },
       });
     }
 
-    // 4. The result the front-end polls.
+    const responseMatch = path.match(/^\/api\/response\/([0-9a-f-]{36})$/);
+    if (request.method === "POST" && responseMatch && validSessionId(responseMatch[1])) {
+      const contentType = request.headers.get("content-type") ?? "";
+      if (!contentType.toLowerCase().startsWith("application/x-www-form-urlencoded")) {
+        return json(request, { status: "failed", reason: "content type must be application/x-www-form-urlencoded" }, { status: 415 });
+      }
+      const declaredLength = Number(request.headers.get("content-length") ?? 0);
+      if (declaredLength > MAX_PRESENTATION_BODY) return json(request, { status: "failed", reason: "presentation response is too large" }, { status: 413 });
+      const body = await request.text();
+      if (body.length > MAX_PRESENTATION_BODY) return json(request, { status: "failed", reason: "presentation response is too large" }, { status: 413 });
+      const result = await env.SESSIONS.getByName(responseMatch[1]).submit(body);
+      return json(request, result, { status: result.status === "failed" ? 400 : result.status === "gone" ? 404 : 200 });
+    }
+
     const resultMatch = path.match(/^\/api\/result\/([0-9a-f-]{36})$/);
-    if (req.method === "GET" && resultMatch) {
-      return session(env, resultMatch[1]).call("/result");
+    if (request.method === "GET" && resultMatch && validSessionId(resultMatch[1])) {
+      const result = await env.SESSIONS.getByName(resultMatch[1]).result(url.searchParams.get("key") ?? "");
+      return result ? json(request, result) : json(request, { status: "gone" }, { status: 404 });
     }
 
-    return new Response("not found", { status: 404 });
+    return respond(request, "not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });
   },
-};
+} satisfies ExportedHandler<Env>;

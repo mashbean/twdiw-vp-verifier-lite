@@ -36,10 +36,11 @@ export async function verifyModaVpToken(
     // 1. Outer VP JWT: verify against the holder key carried in its own header.
     const header = decodeProtectedHeader(vpToken) as { alg?: string; jwk?: JWK };
     if (!header.jwk) return { ok: false, reason: "vp_token header has no holder jwk" };
+    if (header.alg !== "ES256") return { ok: false, reason: "vp_token must use ES256" };
     const holderKey = await importJWK(header.jwk, header.alg ?? "ES256");
     const { payload } = await jwtVerify(vpToken, holderKey as never, {
       audience: opts.expectedAudience,
-      algorithms: ["ES256", "ES384"],
+      algorithms: ["ES256"],
     }); // checks signature, aud, exp, nbf
     if (payload.nonce !== opts.expectedNonce) {
       return { ok: false, reason: "vp_token nonce mismatch" };

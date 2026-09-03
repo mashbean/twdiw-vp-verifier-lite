@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tw-vp-verifier",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-03",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "durable_objects": {
+    "bindings": [
+      { "name": "SESSIONS", "class_name": "PresentationSession" },
+      { "name": "IDENTITY", "class_name": "VerifierIdentity" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["PresentationSession"] },
+    { "tag": "v2", "new_sqlite_classes": ["VerifierIdentity"] }
+  ],
+  "vars": {
+    "OFFICIAL_TRUST_REGISTRY_URL": "https://frontend.wallet.gov.tw/api/did",
+    "TRUSTED_ISSUERS": "",
+    "VERIFIER_ORIGIN": ""
+  }
+}

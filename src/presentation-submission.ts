@@ -22,6 +22,8 @@ interface Submission {
 export function validatePresentationSubmission(
   serialized: string,
   credentialSource: "government" | "selfIssued",
+  definitionId = "bonds-vp",
+  descriptorId = "cred",
 ): string | null {
   if (!serialized) return "presentation_submission is missing";
 
@@ -31,7 +33,7 @@ export function validatePresentationSubmission(
   } catch {
     return "presentation_submission is not JSON";
   }
-  if (submission.definition_id !== "bonds-vp") {
+  if (submission.definition_id !== definitionId) {
     return "presentation_submission definition_id mismatch";
   }
   if (!Array.isArray(submission.descriptor_map) || submission.descriptor_map.length !== 1) {
@@ -41,10 +43,10 @@ export function validatePresentationSubmission(
   const descriptor = submission.descriptor_map[0] as DescriptorMap;
   const nested = descriptor.path_nested;
   const expectedInnerFormat = credentialSource === "selfIssued" ? "vc+moica" : "jwt_vc";
-  if (descriptor.id !== "cred"
+  if (descriptor.id !== descriptorId
       || descriptor.format !== "jwt_vp"
       || descriptor.path !== "$"
-      || nested?.id !== "cred"
+      || nested?.id !== descriptorId
       || nested.format !== expectedInnerFormat
       || nested.path !== "$.vp.verifiableCredential[0]") {
     return "presentation_submission descriptor map does not match this request";

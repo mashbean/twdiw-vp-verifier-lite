@@ -42,6 +42,19 @@ export function parseRocDate(s: unknown): GregorianDate | null {
   return { year: rocYear + 1911, month, day };
 }
 
+/** Accept the two date spellings used by the supported wallets: a ROC date
+ * (`0570605` or `民國057年06月05日`) and an ISO Gregorian date (`1968-06-05`). */
+export function parseFlexibleBirthDate(s: unknown): GregorianDate | null {
+  const value = String(s ?? "").trim();
+  const iso = value.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  if (iso) {
+    const result = { year: Number(iso[1]), month: Number(iso[2]), day: Number(iso[3]) };
+    if (result.year >= 1800 && result.month >= 1 && result.month <= 12 && result.day >= 1 && result.day <= 31) return result;
+    return null;
+  }
+  return parseRocDate(value);
+}
+
 /** Whether someone born on `birth` is at least `min` years old at `nowMs`. */
 export function isAtLeastAge(birth: GregorianDate, min: number, nowMs: number): boolean {
   const now = new Date(nowMs);
@@ -54,7 +67,8 @@ export function isAtLeastAge(birth: GregorianDate, min: number, nowMs: number): 
 /** The whole check: pull `roc_birthday` from the disclosed claims and answer
  *  "at least `min`?". Returns null when no usable birthday was disclosed. */
 export function isAdultFromClaims(claims: unknown, min: number, nowMs: number): boolean | null {
-  const birth = parseRocDate(findClaim(claims, "roc_birthday"));
+  const birthValue = findClaim(claims, "roc_birthday") ?? findClaim(claims, "birthdate");
+  const birth = parseFlexibleBirthDate(birthValue);
   if (!birth) return null;
   return isAtLeastAge(birth, min, nowMs);
 }
