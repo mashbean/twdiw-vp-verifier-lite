@@ -61,10 +61,27 @@ describe("known 有備而來 card compatibility", () => {
 
   it("asks the driver card for license_type without adding DCQL to the official-wallet request", () => {
     const request = requestFor("driving-entitlement", "government");
+    expect(request.presentation_definition.input_descriptors).toHaveLength(2);
     expect(request.presentation_definition.input_descriptors[0].constraints.fields).toEqual([
+      { path: ["$.type"], filter: { type: "array", contains: { const: "2-16-886-101-20003-20008-20082_driverlicense_car_1211" } } },
       { path: ["$.credentialSubject.license_type"] },
     ]);
     expect(request.dcql_query).toBeUndefined();
+  });
+
+  it("gives the official name check concrete telecom and driving-card alternatives", () => {
+    const request = requestFor("identity-name", "government");
+    expect(request.presentation_definition.input_descriptors).toHaveLength(5);
+    expect(request.presentation_definition.input_descriptors.map((descriptor: any) =>
+      descriptor.constraints.fields[0].filter.contains.const)).toEqual([
+      "96979933_name_phonel5_phonel3",
+      "97179430_fet_vc_prod",
+      "97176270_twmdiwvc_postpaid",
+      "2-16-886-101-20003-20008-20082_driverlicense_car_1211",
+      "00000000_demo_drivinglicense_202504251418",
+    ]);
+    expect(request.presentation_definition.input_descriptors.every((descriptor: any) =>
+      descriptor.constraints.fields[1].path[0] === "$.credentialSubject.name")).toBe(true);
   });
 
   it("keeps the newer DCQL query on the Bonds compatibility path", () => {

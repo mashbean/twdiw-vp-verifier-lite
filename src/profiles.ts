@@ -60,6 +60,18 @@ const TELECOM_CARDS: CredentialAlternative[] = [
     issuerName: "台灣大哥大股份有限公司（Taiwan Mobile Co., Ltd.）",
   },
 ];
+const DRIVING_LICENCE_CARDS: CredentialAlternative[] = [
+  {
+    credentialType: "2-16-886-101-20003-20008-20082_driverlicense_car_1211",
+    credentialName: "汽車駕照電子卡",
+    issuerName: "交通部公路局",
+  },
+  {
+    credentialType: "00000000_demo_drivinglicense_202504251418",
+    credentialName: "駕照電子卡（測試）",
+    issuerName: "數位憑證皮夾測試環境",
+  },
+];
 
 export const VERIFICATION_PROFILES: VerificationProfile[] = [
   {
@@ -81,7 +93,13 @@ export const VERIFICATION_PROFILES: VerificationProfile[] = [
     description: "只要求姓名，適合預約、報到或名單核對。",
     resultQuestion: "卡片簽章是否涵蓋持有人揭露的姓名？",
     variants: [
-      { source: "government", sourceLabel: GOVERNMENT, wallets: BOTH_WALLETS, claims: ["name"] },
+      {
+        source: "government",
+        sourceLabel: GOVERNMENT,
+        wallets: BOTH_WALLETS,
+        claims: ["name"],
+        credentialAlternatives: [...TELECOM_CARDS, ...DRIVING_LICENCE_CARDS],
+      },
       { source: "selfIssued", sourceLabel: SELF_ISSUED, wallets: BONDS_ONLY, claims: ["name"], credentialType: "NationalIDCredential", compatibilityNote: CURRENT_SELF_ISSUED_NOTE },
     ],
     privacyNote: "查驗端會看到完整姓名，不要求統一編號、生日或地址。",
@@ -112,7 +130,13 @@ export const VERIFICATION_PROFILES: VerificationProfile[] = [
     description: "要求駕照種類；簽章、持有人綁定、憑證效期與撤銷狀態由查驗器另外檢查。",
     resultQuestion: "這是否為可驗證的駕照電子卡，且撤銷狀態能否另行確認？",
     variants: [
-      { source: "government", sourceLabel: GOVERNMENT, wallets: BOTH_WALLETS, claims: ["license_type"] },
+      {
+        source: "government",
+        sourceLabel: GOVERNMENT,
+        wallets: BOTH_WALLETS,
+        claims: ["license_type"],
+        credentialAlternatives: DRIVING_LICENCE_CARDS,
+      },
     ],
     privacyNote: "不要求姓名、統一編號、生日、管轄編號或發證日期。",
     policyNote: "卡片種類須含 driverlicense 或 drivinglicense，並通過政府 issuer 信任檢查。",
@@ -124,7 +148,13 @@ export const VERIFICATION_PROFILES: VerificationProfile[] = [
     description: "確認卡片簽署了一個格式與檢查碼有效的國民身分證統一編號。",
     resultQuestion: "卡片能否證明持有人有有效格式的國民身分證統一編號？",
     variants: [
-      { source: "government", sourceLabel: GOVERNMENT, wallets: BOTH_WALLETS, claims: ["id_number"] },
+      {
+        source: "government",
+        sourceLabel: GOVERNMENT,
+        wallets: BOTH_WALLETS,
+        claims: ["id_number"],
+        credentialAlternatives: DRIVING_LICENCE_CARDS,
+      },
       { source: "selfIssued", sourceLabel: SELF_ISSUED, wallets: BONDS_ONLY, claims: ["unifiedNo"], credentialType: "NationalIDCredential", compatibilityNote: CURRENT_SELF_ISSUED_NOTE },
     ],
     privacyNote: "查驗端會收到完整統一編號。若只需要成年或姓名，不應使用此情境。",
