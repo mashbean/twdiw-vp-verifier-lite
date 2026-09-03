@@ -267,12 +267,24 @@ export const FRONTEND_CSS = /* css */ `
 `;
 
 export const FRONTEND_JS = /* js */ `
-const state={profiles:[],profile:null,source:null,wallet:'twdiw',socket:null,resultReceived:false,privacyNotice:null,privacyCategories:{},busy:false,deepLink:null};
+const state={profiles:[],profile:null,source:null,wallet:'twdiw',socket:null,resultReceived:false,privacyNotice:null,privacyCategories:{},busy:false,deepLink:null,resultClearTimer:null};
 const $=(id)=>document.getElementById(id);
 const params=new URLSearchParams(location.search);
 
 function text(tag,value,className){const node=document.createElement(tag);if(className)node.className=className;node.textContent=value;return node}
 function clear(node){while(node.firstChild)node.firstChild.remove()}
+function clearResult(){
+  if(state.resultClearTimer)clearTimeout(state.resultClearTimer);state.resultClearTimer=null;
+  const host=$('result');clear(host);host.className='result hidden';state.resultReceived=false;
+}
+function scheduleResultClear(){
+  if(state.resultClearTimer)clearTimeout(state.resultClearTimer);
+  state.resultClearTimer=setTimeout(clearResult,120000);
+}
+function releaseResultSocket(socket){
+  socket.onopen=null;socket.onmessage=null;socket.onclose=null;socket.onerror=null;
+  if(state.socket===socket)state.socket=null;
+}
 function variantsFor(profile){return profile.variants.filter((variant)=>variant.wallets.includes(state.wallet))}
 function resetAcknowledgement(){$('privacy-ack').checked=false;syncCreateButton()}
 function syncCreateButton(){const button=$('create');button.disabled=state.busy||!$('privacy-ack').checked;button.setAttribute('aria-busy',String(state.busy))}
@@ -363,7 +375,7 @@ async function load(){
 
 async function createPresentation(){
   if(!$('privacy-ack').checked){$('create-error').textContent='請先閱讀並確認本次個資利用告知';return}
-  if(state.socket)state.socket.close();state.socket=null;state.resultReceived=false;state.busy=true;syncCreateButton();$('create-error').textContent='';
+  if(state.socket)state.socket.close();state.socket=null;clearResult();state.busy=true;syncCreateButton();$('create-error').textContent='';
   try{
     const response=await fetch('/api/presentations',{method:'POST',headers:{'content-type':'application/json','accept':'application/json'},body:JSON.stringify({profileId:state.profile.id,walletFamily:state.wallet,credentialSource:state.source})});
     const data=await response.json();if(!response.ok)throw new Error(data.error||'建立查驗失敗');
@@ -380,7 +392,7 @@ function openResultChannel(url,key){
   socket.onmessage=(event)=>{
     let data;try{data=JSON.parse(event.data)}catch{return}
     if(data.status==='ready')return;
-    state.resultReceived=true;renderResult(data);
+    state.resultReceived=true;renderResult(data);releaseResultSocket(socket);
   };
   socket.onclose=()=>{if(!state.resultReceived&&!$('presentation').classList.contains('hidden'))renderFailure('一次性結果通道已中斷，請重新建立查驗')};
   socket.onerror=()=>{};
@@ -410,20 +422,23 @@ function renderResult(data){
   const table=document.createElement('table');table.className='claims';
   Object.entries(data.claims||{}).forEach(([name,value])=>{const row=document.createElement('tr');row.append(text('th',labels[name]||name),text('td',String(value)));table.append(row)});host.append(table);
   if(profile)host.append(text('p',profile.policyNote,'policy'));
-  const again=text('button','建立另一筆查驗','primary again');again.type='button';again.onclick=()=>{host.className='result hidden';window.scrollTo({top:$('builder-title').offsetTop-40,behavior:'smooth'})};host.append(again);
+  host.append(text('p','結果會在 2 分鐘後自動從這個頁面清除。','result-retention'));
+  const clearNow=text('button','立即清除查驗結果','primary again');clearNow.type='button';clearNow.onclick=()=>{clearResult();window.scrollTo({top:$('builder-title').offsetTop-40,behavior:'smooth'})};host.append(clearNow);
+  scheduleResultClear();
   host.scrollIntoView({behavior:'smooth',block:'start'});
 }
 function renderFailure(reason){
   $('presentation').classList.add('hidden');const host=$('result');clear(host);host.className='result failed';
   const top=document.createElement('div');top.className='result-top';top.append(text('div','×','result-icon'));
   const heading=document.createElement('div');heading.append(text('h2','驗證未通過'),text('p',reason,'result-summary'));top.append(heading);host.append(top);
-  const again=text('button','重新建立查驗','primary again');again.type='button';again.onclick=createPresentation;host.append(again);host.scrollIntoView({behavior:'smooth',block:'start'});
+  const again=text('button','重新建立查驗','primary again');again.type='button';again.onclick=()=>{clearResult();createPresentation()};host.append(again);scheduleResultClear();host.scrollIntoView({behavior:'smooth',block:'start'});
 }
 
 $('wallet-twdiw').onclick=()=>chooseWallet('twdiw');$('wallet-bonds').onclick=()=>chooseWallet('bonds');
 $('deep-link').onclick=(event)=>{event.preventDefault();if(state.deepLink)location.href=state.deepLink};
 $('privacy-ack').onchange=()=>{syncCreateButton();$('create-error').textContent=''};
-$('create').onclick=createPresentation;$('cancel').onclick=()=>{if(state.socket)state.socket.close();state.socket=null;$('presentation').classList.add('hidden')};
+$('create').onclick=createPresentation;$('cancel').onclick=()=>{if(state.socket)state.socket.close();state.socket=null;$('presentation').classList.add('hidden');$('qr').replaceChildren();state.deepLink=null};
 $('copy-prompt').onclick=async()=>{const button=$('copy-prompt');try{await navigator.clipboard.writeText($('deploy-prompt').textContent);button.textContent='已複製';setTimeout(()=>{button.textContent=button.dataset.default},1800)}catch{button.textContent='請手動選取';}};
+window.addEventListener('pagehide',()=>{if(state.socket)state.socket.close();state.socket=null;if(state.resultClearTimer)clearTimeout(state.resultClearTimer)});
 load().catch((error)=>{$('create-error').textContent=error instanceof Error?error.message:'載入失敗'});
 `;

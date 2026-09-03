@@ -54,6 +54,10 @@ Cloudflare 仍是 HTTPS 流量處理者，可能依帳號方案、安全產品�
 
 為了不保存個資，驗證結果只送給查驗開始前已連線且完成 capability 驗證的 WebSocket。瀏覽器若在 presentation 回來的瞬間離線，結果不會被保存，也無法重取，使用者須重新建立查驗。這是刻意選擇的隱私／可用性取捨。
 
+### 查驗端畫面仍會短暫顯示揭露結果
+
+零持久化不代表查驗端螢幕沒有暴露面。姓名、末五碼等揭露值送達後會存在瀏覽器 DOM，因此現行頁面提供「立即清除查驗結果」，並在顯示兩分鐘後自動清除。結果送達時也立即解除 WebSocket event handlers 與前端保存的 socket reference，縮短 result capability 在 JavaScript 記憶體中的生命週期。共用櫃台仍須避免截圖、錄影、瀏覽器擴充功能與未授權旁觀；這些端點風險不是伺服器零持久化可以消除的。
+
 ### 官方 API 與狀態清單可用性
 
 官方 issuer API 無法使用時，政府卡 fail closed。卡片未提供支援的狀態清單或狀態端點無法驗證時，狀態為 `unknown`。駕照頁只確認已完成的簽章、holder binding、issuer 與卡型，不把 `unknown` 寫成「仍有效」；高風險服務應拒絕或要求其他查核。
@@ -80,3 +84,5 @@ npx wrangler deploy --dry-run
 ```
 
 部署後還要分別檢查首頁、`/api/profiles`、verifier DID、建立 QR、signed request 不含 capability、WebSocket capability 拒絕，以及兩種真實皮夾的跨裝置出示。fixture、CI 或 dry-run 不能代替真實卡片驗收。
+
+結果頁另須確認可立即清除、兩分鐘後自動清除，且結果送達後不再保留 WebSocket handler 與 capability reference。

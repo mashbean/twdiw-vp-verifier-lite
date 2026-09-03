@@ -30,7 +30,7 @@ export const PRIVACY_NOTICE: PrivacyNotice = {
   controller: "mashbean（請出示皮夾示範站）",
   contact: "security@mashbean.net",
   lawfulBasis: "本示範限使用者主動參與的技術測試，持卡人仍須於皮夾內自行選擇是否出示。自行部署者不得把本頁勾選或皮夾同意畫面直接當成全部法律依據，仍須依實際業務確認個資法第 19 條的合法事由。",
-  period: "揭露資料只在單次查驗的執行記憶體與結果頁存在。伺服器送出結果後立即丟棄；未完成 session 的非揭露 metadata 最長保留 10 分鐘。結果頁資料於重新整理、離開或關閉頁面後消失。",
+  period: "揭露資料只在單次查驗的執行記憶體與結果頁存在。伺服器送出結果後立即丟棄；未完成 session 的非揭露 metadata 最長保留 10 分鐘。結果頁提供立即清除，並於顯示 2 分鐘後自動清除；重新整理、離開或關閉頁面也會消失。",
   region: "由 Cloudflare 全球網路依連線路由處理，節點可能位於臺灣境外。",
   recipients: "本示範站營運者，以及受託處理 HTTPS 與 Worker 執行的 Cloudflare。資料不提供行銷、廣告、側寫或其他第三人使用。",
   method: "透過 OIDC4VP 接收持卡人同意揭露的最少欄位，完成簽章、holder binding、issuer 信任、狀態與所選目的的判斷；不建立個人資料檔案。",

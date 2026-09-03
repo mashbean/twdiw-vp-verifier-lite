@@ -38,6 +38,14 @@ describe("landing page", () => {
     expect(FRONTEND_JS).not.toContain("setInterval");
   });
 
+  it("clears disclosed results and releases the result capability", () => {
+    expect(FRONTEND_JS).toContain("立即清除查驗結果");
+    expect(FRONTEND_JS).toContain("setTimeout(clearResult,120000)");
+    expect(FRONTEND_JS).toContain("releaseResultSocket(socket)");
+    expect(FRONTEND_JS).toContain("socket.onmessage=null");
+    expect(FRONTEND_JS).toContain("window.addEventListener('pagehide'");
+  });
+
   it("links the renamed repository and developer resources", () => {
     expect(FRONTEND_HTML).toContain("https://github.com/mashbean/twdiw-vp-verifier-lite");
     expect(FRONTEND_HTML).toContain("skills/deploy-twdiw-vp-verifier-lite");

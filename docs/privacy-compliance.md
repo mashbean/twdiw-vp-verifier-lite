@@ -26,6 +26,7 @@
 - 建立 QR 的人可能是查驗方而非持卡人。因此頁面勾選是查驗方的流程閘門，不是持卡人的同意紀錄；查驗方仍須讓持卡人在掃碼前能閱讀告知內容。
 - presentation、credential、揭露值與 result 不寫入 Durable Object、KV、D1、R2、Workers Logs、analytics 或 application log。
 - 結果只經已驗證 capability 的一次性 WebSocket 傳回，送出後立即清除 session metadata。
+- 查驗端結果頁提供立即清除並於兩分鐘後自動清除；結果送達後解除 WebSocket handlers 與前端 socket reference，避免 capability 在頁面記憶體中不必要地延長存活。
 - 未完成 session 的 metadata 最長 10 分鐘；它只含交換所需 nonce、state、capability、情境與要求欄位名稱。
 
 資料類別對照依[個人資料保護法之特定目的及個人資料之類別](https://law.pdpc.gov.tw/LawContent.aspx?id=FL010631)：
@@ -56,4 +57,5 @@
 - 未確認告知前無法建立 QR；切換皮夾、目的或來源後必須重新確認。
 - QR 與 signed request 不含 `resultKey` 或告知勾選狀態。
 - 完成或失敗後，request URI 立即失效，查驗結果無法重取。
+- 查驗端可立即清除結果，且結果於顯示兩分鐘後自動從 DOM 移除。
 - 真機測試使用去識別化紀錄，不把 credential、QR、presentation 或結果貼進 issue、CI artifact 或測試報告。
