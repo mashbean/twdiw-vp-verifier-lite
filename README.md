@@ -109,6 +109,12 @@ OIDC4VP 1.0 Final 以 DCQL 表達 credential query。台灣現行 TWDIW 實作�
 
 更完整的協定說明見 [docs/protocol-and-trust.md](docs/protocol-and-trust.md)。
 
+### iPhone 同機開啟的限制
+
+TWDIW 公開 API 文件以 `openid4vp://` 作為查驗 deep link。這是共用的自訂 URL scheme，不是某一款皮夾的專屬位址。iOS 裝有多個註冊相同 scheme 的皮夾時，網頁無法指定由哪一款 App 接收，系統可能開啟其他皮夾。
+
+示範站因此以跨裝置掃描 QR Code 為主要流程。同機開啟只在數位憑證皮夾模式提供，點擊前會提示此限制；有備而來模式需從 App 內掃描另一個螢幕上的 QR Code。若未來官方 App 提供專屬 Universal Link 或 Digital Credentials API 介接，才適合改為可明確指定皮夾的同機流程。
+
 ## 本機開發
 
 需要 Node.js 22 以上。
