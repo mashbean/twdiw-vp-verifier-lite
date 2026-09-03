@@ -33,6 +33,7 @@ function requestFor(profileId: string, source: CredentialSource) {
     credentialSource: source,
     requestedClaims: variant.claims,
     credentialType: variant.credentialType,
+    credentialAlternatives: variant.credentialAlternatives,
   }) as any;
 }
 
@@ -67,12 +68,32 @@ describe("known 有備而來 card compatibility", () => {
     ]);
   });
 
-  it("asks the telecom card only for name and phonel5", () => {
+  it("uses the official two-group, three-carrier telecom request shape", () => {
     const request = requestFor("telecom-pickup", "government");
-    expect(request.presentation_definition.input_descriptors[0].constraints.fields).toEqual([
-      { path: ["$.credentialSubject.name"] },
-      { path: ["$.credentialSubject.phonel5"] },
+    expect(request.presentation_definition.submission_requirements).toEqual([
+      { name: "姓名", rule: "pick", max: 1, from: "Group_1" },
+      { name: "末五碼", rule: "pick", max: 1, from: "Group_2" },
     ]);
+    expect(request.presentation_definition.input_descriptors).toHaveLength(6);
+    expect(request.presentation_definition.input_descriptors[0]).toMatchObject({
+      id: "96979933_name_phonel5_phonel3_1",
+      group: ["Group_1"],
+      constraints: {
+        limit_disclosure: "required",
+        fields: [
+          { path: ["$.type"], filter: { type: "array", contains: { const: "96979933_name_phonel5_phonel3" } } },
+          { path: ["$.credentialSubject.name"] },
+        ],
+      },
+    });
+    expect(request.presentation_definition.input_descriptors[5]).toMatchObject({
+      id: "97176270_twmdiwvc_postpaid_6",
+      group: ["Group_2"],
+      constraints: { fields: [
+        { path: ["$.type"], filter: { type: "array", contains: { const: "97176270_twmdiwvc_postpaid" } } },
+        { path: ["$.credentialSubject.phonel5"] },
+      ] },
+    });
   });
 
   it("uses an array type filter for the self-issued NationalIDCredential", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateProfile, getProfile, getVariant, selectedClaims } from "../src/profiles";
+import { credentialDeclaresType, evaluateProfile, getProfile, getVariant, selectedClaims } from "../src/profiles";
 
 describe("verification profiles", () => {
   it("asks a telecom card only for the two measured pickup claims", () => {
@@ -29,6 +29,15 @@ describe("verification profiles", () => {
       "97176270_twmdiwvc_postpaid",
     );
     expect(decision.status).toBe("pass");
+  });
+
+  it("binds a selected descriptor to the type signed inside the credential", () => {
+    expect(credentialDeclaresType({
+      vc: { type: ["VerifiableCredential", "97176270_twmdiwvc_postpaid"] },
+    }, "97176270_twmdiwvc_postpaid")).toBe(true);
+    expect(credentialDeclaresType({
+      vc: { type: ["VerifiableCredential", "97179430_fet_vc_prod"] },
+    }, "97176270_twmdiwvc_postpaid")).toBe(false);
   });
 
   it("requires a recognised driving-licence credential type", () => {

@@ -5,9 +5,10 @@ import { DurableObject } from "cloudflare:workers";
 import { verifySdJwtVc } from "./verify";
 import { verifyModaVpToken } from "./moda";
 import { verifyMoicaVpToken } from "./moica";
-import { validatePresentationSubmission } from "./presentation-submission";
+import { presentationDescriptorIds, validatePresentationSubmission } from "./presentation-submission";
 import {
   claimLabel,
+  credentialDeclaresType,
   evaluateProfile,
   getProfile,
   getVariant,
@@ -17,7 +18,7 @@ import {
   type WalletFamily,
   type VerificationDecision,
 } from "./profiles";
-import { buildRequestPayload } from "./request";
+import { buildRequestPayload, expectedDescriptorIds } from "./request";
 import { isAuthorizedResultSocket, parseResultSubscription, resultKeysEqual } from "./result-channel";
 import {
   resolveGovernmentIssuerTrust,
@@ -37,6 +38,9 @@ interface SessionState {
   credentialSource: CredentialSource;
   requestedClaims: string[];
   credentialType?: string;
+  credentialAlternatives?: import("./profiles").CredentialAlternative[];
+  profileLabel?: string;
+  resultQuestion?: string;
   createdAt: number;
 }
 
@@ -106,6 +110,9 @@ export class PresentationSession extends DurableObject<Env> {
       credentialSource: input.credentialSource,
       requestedClaims: variant.claims,
       credentialType: variant.credentialType,
+      credentialAlternatives: variant.credentialAlternatives,
+      profileLabel: profile.label,
+      resultQuestion: profile.resultQuestion,
       createdAt: Date.now(),
     });
     await this.ctx.storage.setAlarm(Date.now() + TTL_MS);
@@ -120,7 +127,16 @@ export class PresentationSession extends DurableObject<Env> {
       alg: "ES256",
       kid: `${session.clientId}#${session.clientId.slice("did:key:".length)}`,
     };
-    const signingInput = `${b64urlJSON(header)}.${b64urlJSON(buildRequestPayload(session))}`;
+    const signingInput = `${b64urlJSON(header)}.${b64urlJSON(buildRequestPayload({
+      ...session,
+      purpose: {
+        client: "請出示皮夾",
+        termsUri: `${new URL(session.responseUri).origin}/#privacy-notice-title`,
+        scenario: session.profileLabel ?? "數位憑證查驗",
+        purpose: session.resultQuestion ?? "一次性數位憑證查驗",
+      },
+      expiresAtEpochSeconds: Math.floor((session.createdAt + TTL_MS) / 1000),
+    }))}`;
     const identity = this.env.IDENTITY.getByName("verifier");
     return `${signingInput}.${await identity.sign(signingInput)}`;
   }
@@ -188,11 +204,17 @@ export class PresentationSession extends DurableObject<Env> {
 
     const form = new URLSearchParams(serializedForm);
     const vpToken = form.get("vp_token") ?? "";
+    const serializedSubmission = form.get("presentation_submission") ?? "";
+    const allowedDescriptorIds = expectedDescriptorIds(session);
+    const expectedDescriptorCount = session.credentialAlternatives?.length
+      ? session.requestedClaims.length
+      : 1;
     const submissionError = validatePresentationSubmission(
-      form.get("presentation_submission") ?? "",
+      serializedSubmission,
       session.credentialSource,
       "mashbean-vp",
-      "credential",
+      allowedDescriptorIds,
+      expectedDescriptorCount,
     );
     if (submissionError) {
       return this.fail(session, submissionError, startedAt);
@@ -231,9 +253,18 @@ export class PresentationSession extends DurableObject<Env> {
         ? await verifySdJwtVc(vpToken, { expectedNonce: session.nonce, expectedAudience: session.clientId, trustedIssuers })
         : await verifyModaVpToken(vpToken, { expectedNonce: session.nonce, expectedAudience: session.clientId, trustedIssuers });
     const credentialMs = Math.round(performance.now() - credentialStarted);
-    const credentialType = resolvedCredentialType(result.claims, result.vct ?? session.credentialType);
+    let credentialType = resolvedCredentialType(result.claims, result.vct ?? session.credentialType);
     if (!result.ok) {
       return this.fail(session, result.reason ?? "credential verification failed", startedAt);
+    }
+    if (session.credentialAlternatives?.length) {
+      const descriptorIds = presentationDescriptorIds(serializedSubmission);
+      const alternative = session.credentialAlternatives.find((candidate) =>
+        descriptorIds.every((id) => id.startsWith(`${candidate.credentialType}_`)));
+      if (!alternative || !credentialDeclaresType(result.claims, alternative.credentialType)) {
+        return this.fail(session, "presentation descriptor does not match the presented credential type", startedAt);
+      }
+      credentialType = alternative.credentialType;
     }
     const claims = selectedClaims(result.claims, session.requestedClaims);
     const decision = evaluateProfile(

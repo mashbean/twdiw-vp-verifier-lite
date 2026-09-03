@@ -4,12 +4,19 @@ export type CredentialSource = "government" | "selfIssued";
 export type WalletFamily = "twdiw" | "bonds";
 export type DecisionStatus = "pass" | "warning" | "not-established";
 
+export interface CredentialAlternative {
+  credentialType: string;
+  credentialName: string;
+  issuerName: string;
+}
+
 export interface VerificationVariant {
   source: CredentialSource;
   sourceLabel: string;
   wallets: WalletFamily[];
   claims: string[];
   credentialType?: string;
+  credentialAlternatives?: CredentialAlternative[];
   claimLabels?: Record<string, string>;
   compatibilityNote?: string;
 }
@@ -36,6 +43,23 @@ const SELF_ISSUED = "有備而來自發證件";
 const BOTH_WALLETS: WalletFamily[] = ["twdiw", "bonds"];
 const BONDS_ONLY: WalletFamily[] = ["bonds"];
 const CURRENT_SELF_ISSUED_NOTE = "需要由目前版本的有備而來重新建立、支援逐欄揭露的正式證件。舊版卡片只能完整出示，App 會拒絕這個最小揭露請求。";
+const TELECOM_CARDS: CredentialAlternative[] = [
+  {
+    credentialType: "96979933_name_phonel5_phonel3",
+    credentialName: "中華電信門號電子卡",
+    issuerName: "中華電信股份有限公司（Chunghwa Telecom Co., Ltd.）",
+  },
+  {
+    credentialType: "97179430_fet_vc_prod",
+    credentialName: "遠傳電信門號電子卡",
+    issuerName: "遠傳電信股份有限公司（Far EasTone Telecommunications Co., Ltd.）",
+  },
+  {
+    credentialType: "97176270_twmdiwvc_postpaid",
+    credentialName: "台灣大哥大門號電子卡",
+    issuerName: "台灣大哥大股份有限公司（Taiwan Mobile Co., Ltd.）",
+  },
+];
 
 export const VERIFICATION_PROFILES: VerificationProfile[] = [
   {
@@ -70,7 +94,13 @@ export const VERIFICATION_PROFILES: VerificationProfile[] = [
     description: "重現統一超商取貨情境，只要求電信卡上的姓名與手機末五碼。",
     resultQuestion: "受信任電信卡是否簽署了姓名與手機末五碼？",
     variants: [
-      { source: "government", sourceLabel: GOVERNMENT, wallets: BOTH_WALLETS, claims: ["name", "phonel5"] },
+      {
+        source: "government",
+        sourceLabel: GOVERNMENT,
+        wallets: BOTH_WALLETS,
+        claims: ["name", "phonel5"],
+        credentialAlternatives: TELECOM_CARDS,
+      },
     ],
     privacyNote: "查驗端會看到姓名與手機末五碼，不取得完整門號。",
     policyNote: "這能確認發卡內容與持有人金鑰綁定，不單獨證明 SIM 卡此刻仍由本人控制。",
@@ -133,6 +163,7 @@ export function publicProfiles(): VerificationProfile[] {
       ...variant,
       wallets: [...variant.wallets],
       claims: [...variant.claims],
+      credentialAlternatives: variant.credentialAlternatives?.map((alternative) => ({ ...alternative })),
       claimLabels: Object.fromEntries(variant.claims.map((name) => [name, claimLabel(name)])),
     })),
   }));
@@ -166,6 +197,21 @@ function credentialTypeFromClaims(claims: unknown): string | undefined {
   const type = object.type;
   if (Array.isArray(type)) return type.map(String).find((value) => value !== "VerifiableCredential") ?? type.map(String)[0];
   return typeof type === "string" ? type : undefined;
+}
+
+export function credentialDeclaresType(claims: unknown, expectedType: string): boolean {
+  if (!claims || typeof claims !== "object") return false;
+  const object = claims as Record<string, unknown>;
+  const values: string[] = [];
+  if (typeof object.vct === "string") values.push(object.vct);
+  const appendType = (value: unknown) => {
+    if (Array.isArray(value)) values.push(...value.map(String));
+    else if (typeof value === "string") values.push(value);
+  };
+  appendType(object.type);
+  const vc = object.vc;
+  if (vc && typeof vc === "object" && !Array.isArray(vc)) appendType((vc as Record<string, unknown>).type);
+  return values.includes(expectedType);
 }
 
 export function resolvedCredentialType(claims: unknown, verifiedType?: string): string | undefined {

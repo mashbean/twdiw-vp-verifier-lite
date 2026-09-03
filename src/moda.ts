@@ -46,16 +46,22 @@ export async function verifyModaVpToken(
       return { ok: false, reason: "vp_token nonce mismatch" };
     }
 
-    // 2. Pull the inner credential out of the presentation.
+    // 2. Pull the inner credential(s) out of the presentation. The production
+    // telecom flow presents the same issuer JWT twice with different selective
+    // disclosures, once for each descriptor group.
     const vp = payload.vp as { verifiableCredential?: unknown } | undefined;
     const list = vp?.verifiableCredential;
-    const inner = Array.isArray(list) ? list[0] : list;
-    if (typeof inner !== "string" || !inner) {
+    const credentials = Array.isArray(list) ? list : [list];
+    if (!credentials.length || credentials.length > 8
+        || credentials.some((credential) => typeof credential !== "string" || !credential)) {
       return { ok: false, reason: "vp_token carries no verifiableCredential" };
     }
-    const parts = inner.split("~");
-    const issuerJwt = parts[0];
-    const disclosures = parts.slice(1).filter(Boolean); // trailing "~" leaves an empty tail
+    const parsed = (credentials as string[]).map((credential) => credential.split("~"));
+    const issuerJwt = parsed[0][0];
+    if (parsed.some((parts) => parts[0] !== issuerJwt)) {
+      return { ok: false, reason: "presentation descriptors do not refer to the same credential" };
+    }
+    const disclosures = [...new Set(parsed.flatMap((parts) => parts.slice(1).filter(Boolean)))];
 
     const base = await verifyIssuerCredential(issuerJwt, disclosures, opts.trustedIssuers);
     if (!base.ok) return { ok: false, reason: base.reason, vct: base.vct, issuer: base.issuer, status: base.status, statusReason: base.statusReason };

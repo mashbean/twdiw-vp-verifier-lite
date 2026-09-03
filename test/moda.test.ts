@@ -35,6 +35,8 @@ interface MintOpts {
   wrongAudience?: boolean;
   /** Name the issuer with a did:key (as moda does) instead of an https URL. */
   didKeyIssuer?: boolean;
+  /** Present one issuer credential twice, each time revealing one claim. */
+  splitDisclosures?: boolean;
 }
 
 async function mint(opts: MintOpts = {}) {
@@ -63,6 +65,9 @@ async function mint(opts: MintOpts = {}) {
     .setExpirationTime("1h")
     .sign(issuer.privateKey);
   const inner = issuerJwt + "~" + discs.map((d) => d + "~").join(""); // trailing ~, no KB
+  const presented = opts.splitDisclosures
+    ? discs.map((disc) => `${issuerJwt}~${disc}~`)
+    : [inner];
 
   // Outer VP JWT: the holder (or, for the mismatch case, an attacker) signs it and
   // carries their own key in the header.
@@ -75,7 +80,7 @@ async function mint(opts: MintOpts = {}) {
     vp: {
       context: ["https://www.w3.org/2018/credentials/v1"],
       type: ["VerifiablePresentation"],
-      verifiableCredential: [inner],
+      verifiableCredential: presented,
     },
   })
     .setProtectedHeader({ alg: "ES256", typ: "JWT", jwk: vpSignerPubJwk })
@@ -126,6 +131,15 @@ describe("verifyModaVpToken", () => {
     expect(r.holderBound).toBe(true);
     expect(r.issuer?.startsWith("did:key:z")).toBe(true);
     expect(r.claims?.name).toBe("測試持有人");
+  });
+
+  it("combines disclosures when official telecom groups present the same card twice", async () => {
+    const { vpToken, issuerPubJwk } = await mint({ splitDisclosures: true });
+    mockFetch(issuerPubJwk);
+    const r = await verifyModaVpToken(vpToken, OK);
+    expect(r.ok).toBe(true);
+    expect(r.claims?.name).toBe("測試持有人");
+    expect(r.claims?.id_number).toBe("A123456789");
   });
 
   it("rejects a presentation signed by a key other than the credential's cnf", async () => {

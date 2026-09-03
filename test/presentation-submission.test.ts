@@ -18,6 +18,19 @@ function submission(innerFormat: string): string {
   });
 }
 
+function groupedSubmission(): string {
+  return JSON.stringify({
+    id: "submission-state",
+    definition_id: "mashbean-vp",
+    descriptor_map: ["carrier_1", "carrier_4"].map((id, index) => ({
+      id,
+      format: "jwt_vp",
+      path: "$",
+      path_nested: { id, format: "jwt_vc", path: `$.vp.verifiableCredential[${index}]` },
+    })),
+  });
+}
+
 describe("presentation_submission", () => {
   it("accepts the government-wallet compatibility mapping", () => {
     expect(validatePresentationSubmission(submission("jwt_vc"), "government")).toBeNull();
@@ -34,5 +47,19 @@ describe("presentation_submission", () => {
   it("fails closed when the map is absent or malformed", () => {
     expect(validatePresentationSubmission("", "government")).toMatch(/missing/);
     expect(validatePresentationSubmission("{}", "government")).toMatch(/definition_id/);
+  });
+
+  it("accepts the official grouped telecom mapping", () => {
+    expect(validatePresentationSubmission(
+      groupedSubmission(), "government", "mashbean-vp",
+      ["carrier_1", "carrier_2", "carrier_3", "carrier_4", "carrier_5", "carrier_6"], 2,
+    )).toBeNull();
+  });
+
+  it("rejects duplicate grouped mappings", () => {
+    const duplicate = groupedSubmission().replaceAll("carrier_4", "carrier_1");
+    expect(validatePresentationSubmission(
+      duplicate, "government", "mashbean-vp", ["carrier_1", "carrier_4"], 2,
+    )).toMatch(/does not match/);
   });
 });
