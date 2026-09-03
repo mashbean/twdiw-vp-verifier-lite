@@ -1,4 +1,4 @@
-import { claimLabel, type CredentialAlternative, type CredentialSource } from "./profiles";
+import { claimLabel, type CredentialAlternative, type CredentialSource, type WalletFamily } from "./profiles";
 
 export interface RequestSession {
   clientId: string;
@@ -6,6 +6,7 @@ export interface RequestSession {
   nonce: string;
   state: string;
   credentialSource: CredentialSource;
+  walletFamily?: WalletFamily;
   requestedClaims: string[];
   credentialType?: string;
   credentialAlternatives?: CredentialAlternative[];
@@ -97,7 +98,7 @@ export function buildRequestPayload(session: RequestSession): Record<string, unk
     // OID4VP 1.0 Final uses DCQL. Keeping it beside Presentation Exchange is a
     // deliberate TWDIW compatibility profile: current Taiwan wallets consume
     // the definition while newer wallets can inspect the equivalent query.
-    ...(selfIssued ? {} : {
+    ...(!selfIssued && session.walletFamily !== "twdiw" ? {
       dcql_query: {
         credentials: [{
           id: "credential",
@@ -108,6 +109,6 @@ export function buildRequestPayload(session: RequestSession): Record<string, unk
           claims: session.requestedClaims.map((claim) => ({ path: ["vc", "credentialSubject", claim] })),
         }],
       },
-    }),
+    } : {}),
   };
 }

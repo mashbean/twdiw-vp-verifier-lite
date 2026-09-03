@@ -59,10 +59,10 @@ describe("landing page", () => {
     expect(FRONTEND_HTML.indexOf("成為官方註冊驗證者")).toBeLessThan(FRONTEND_HTML.indexOf("COPYABLE PROMPT"));
   });
 
-  it("does not promise a specific wallet for the generic iOS URL scheme", () => {
+  it("routes the official selection through its dedicated iOS URL scheme", () => {
     expect(FRONTEND_HTML).toContain("在本機嘗試開啟");
     expect(FRONTEND_HTML).not.toContain("在同一台裝置開啟皮夾");
-    expect(FRONTEND_JS).toContain("iOS 無法指定要開啟哪一個註冊 openid4vp 的皮夾");
+    expect(FRONTEND_JS).toContain("官方數位憑證皮夾的專用入口");
     expect(FRONTEND_JS).toContain("有備而來請從 App 內掃描上方 QR Code");
   });
 });

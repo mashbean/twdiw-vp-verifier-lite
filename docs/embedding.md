@@ -61,7 +61,7 @@ const result = await new Promise((resolve, reject) => {
 
 ## 安全邊界
 
-- QR 是 `openid4vp://` Authorization Request 入口，只帶 verifier `client_id` 與 `request_uri`。
+- QR 是 Authorization Request 入口，只帶 verifier `client_id` 與 `request_uri`。官方皮夾使用 `modadigitalwallet://authorize`，有備而來相容層使用 `openid4vp://`。
 - `resultKey` 是訂閱結果的 bearer capability，只經 WebSocket message 傳送，不會放進 URL、QR 或 signed request。
 - Durable Object 只存 nonce、state、capability、profile、欄位名稱等非揭露內容；完成後立即刪除，未完成 session 在 10 分鐘後由 alarm 刪除。
 - presentation、credential、揭露 claims 與結果只存在於單次請求記憶體及已授權 WebSocket，不寫入 Cloudflare storage。

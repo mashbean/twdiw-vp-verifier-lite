@@ -129,7 +129,7 @@ export const FRONTEND_HTML = /* html */ `<!doctype html>
     <section class="trust-strip" aria-label="驗證範圍">
       <div><strong>查驗的證據</strong><span>簽章、nonce、audience、holder binding、issuer 信任與憑證狀態</span></div>
       <div><strong>資料保存</strong><span>presentation 與揭露欄位只在單次請求的記憶體中處理，不寫入 Durable Object、log 或 analytics</span></div>
-      <div><strong>標準範圍</strong><span>TWDIW Presentation Exchange 加 OIDC4VP 1.0 DCQL 相容層</span></div>
+      <div><strong>標準範圍</strong><span>官方皮夾使用 TWDIW Presentation Exchange；有備而來另保留 OIDC4VP 1.0 DCQL 相容層</span></div>
     </section>
 
     <section id="developers" class="implementation" aria-labelledby="implementation-title">
@@ -287,10 +287,10 @@ function chooseWallet(wallet){
 function renderWallets(){
   $('wallet-twdiw').setAttribute('aria-pressed',String(state.wallet==='twdiw'));
   $('wallet-bonds').setAttribute('aria-pressed',String(state.wallet==='bonds'));
-  const link=$('deep-link');const note=$('deep-link-note');const supportsGenericDeepLink=state.wallet==='twdiw';
-  link.classList.toggle('hidden',!supportsGenericDeepLink);
-  note.textContent=supportsGenericDeepLink
-    ?'iPhone 會把 openid4vp 交給系統選定的已安裝皮夾。若開到其他皮夾，請返回並改用目標皮夾掃描上方 QR Code。'
+  const link=$('deep-link');const note=$('deep-link-note');const supportsDirectOpen=state.wallet==='twdiw';
+  link.classList.toggle('hidden',!supportsDirectOpen);
+  note.textContent=supportsDirectOpen
+    ?'這個按鈕使用官方數位憑證皮夾的專用入口。跨裝置時也可以直接用官方 App 掃描上方 QR Code。'
     :'有備而來請從 App 內掃描上方 QR Code。若 QR 顯示在同一支手機，請改在另一個螢幕建立查驗。';
 }
 
@@ -421,7 +421,7 @@ function renderFailure(reason){
 }
 
 $('wallet-twdiw').onclick=()=>chooseWallet('twdiw');$('wallet-bonds').onclick=()=>chooseWallet('bonds');
-$('deep-link').onclick=(event)=>{event.preventDefault();if(!state.deepLink)return;const proceed=window.confirm('iOS 無法指定要開啟哪一個註冊 openid4vp 的皮夾。若開到其他皮夾，請返回並改用目標皮夾掃描 QR Code。仍要在本機嘗試開啟嗎？');if(proceed)location.href=state.deepLink};
+$('deep-link').onclick=(event)=>{event.preventDefault();if(state.deepLink)location.href=state.deepLink};
 $('privacy-ack').onchange=()=>{syncCreateButton();$('create-error').textContent=''};
 $('create').onclick=createPresentation;$('cancel').onclick=()=>{if(state.socket)state.socket.close();state.socket=null;$('presentation').classList.add('hidden')};
 $('copy-prompt').onclick=async()=>{const button=$('copy-prompt');try{await navigator.clipboard.writeText($('deploy-prompt').textContent);button.textContent='已複製';setTimeout(()=>{button.textContent=button.dataset.default},1800)}catch{button.textContent='請手動選取';}};

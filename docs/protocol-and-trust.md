@@ -6,7 +6,7 @@
 Verifier browser           Cloudflare Worker / DO                 Wallet
       | POST /presentations        |                                |
       |--------------------------->| 建 session、nonce、state       |
-      |  openid4vp QR + resultKey  |                                |
+      | wallet-specific VP QR + resultKey |                         |
       |<---------------------------|                                |
       |                            |<--- scan QR --------------------|
       |                            |--- signed request object ------>|

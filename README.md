@@ -70,7 +70,7 @@ curl -X POST https://your-worker.example/api/presentations \
 
 回應包含：
 
-- `qr`：跨裝置掃描的 `openid4vp://` deep link
+- `qr`：跨裝置掃描的查驗 deep link；官方皮夾使用 `modadigitalwallet://authorize`，有備而來相容層使用 `openid4vp://`
 - `qrSvg`：可直接嵌入頁面的 QR SVG
 - `requestUri`：錢包取得 signed Authorization Request 的位置
 - `eventsUrl`：同源一次性 WebSocket；瀏覽器須連線後以第一個 message 提交 `resultKey`
@@ -111,7 +111,7 @@ OIDC4VP 1.0 Final 以 DCQL 表達 credential query。台灣現行 TWDIW 實作�
 
 ### iPhone 同機開啟的限制
 
-TWDIW 公開 API 文件以 `openid4vp://` 作為查驗 deep link。這是共用的自訂 URL scheme，不是某一款皮夾的專屬位址。iOS 裝有多個註冊相同 scheme 的皮夾時，網頁無法指定由哪一款 App 接收，系統可能開啟其他皮夾。
+本站依頁面選擇產生不同入口。官方數位憑證皮夾使用其正式服務採用的 `modadigitalwallet://authorize`；有備而來相容測試使用 `openid4vp://`。後者是共用的自訂 URL scheme，iOS 裝有多個註冊相同 scheme 的皮夾時，網頁無法指定由哪一款 App 接收，建議直接用目標皮夾掃描 QR Code。
 
 示範站因此以跨裝置掃描 QR Code 為主要流程。同機開啟只在數位憑證皮夾模式提供，點擊前會提示此限制；有備而來模式需從 App 內掃描另一個螢幕上的 QR Code。若未來官方 App 提供專屬 Universal Link 或 Digital Credentials API 介接，才適合改為可明確指定皮夾的同機流程。
 

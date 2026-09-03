@@ -31,6 +31,7 @@ function requestFor(profileId: string, source: CredentialSource) {
     nonce: "nonce",
     state: "state",
     credentialSource: source,
+    walletFamily: "twdiw",
     requestedClaims: variant.claims,
     credentialType: variant.credentialType,
     credentialAlternatives: variant.credentialAlternatives,
@@ -58,11 +59,26 @@ describe("known 有備而來 card compatibility", () => {
     }
   });
 
-  it("asks the driver card for license_type in both request dialects", () => {
+  it("asks the driver card for license_type without adding DCQL to the official-wallet request", () => {
     const request = requestFor("driving-entitlement", "government");
     expect(request.presentation_definition.input_descriptors[0].constraints.fields).toEqual([
       { path: ["$.credentialSubject.license_type"] },
     ]);
+    expect(request.dcql_query).toBeUndefined();
+  });
+
+  it("keeps the newer DCQL query on the Bonds compatibility path", () => {
+    const profile = getProfile("driving-entitlement")!;
+    const variant = getVariant(profile, "government", "bonds")!;
+    const request = buildRequestPayload({
+      clientId: "did:key:zVerifier",
+      responseUri: "https://verifier.example/response",
+      nonce: "nonce",
+      state: "state",
+      credentialSource: "government",
+      walletFamily: "bonds",
+      requestedClaims: variant.claims,
+    }) as any;
     expect(request.dcql_query.credentials[0].claims).toEqual([
       { path: ["vc", "credentialSubject", "license_type"] },
     ]);

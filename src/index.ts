@@ -124,7 +124,8 @@ export default {
       });
       const requestUri = `${origin}/api/request/${id}`;
       const eventsUrl = `${origin.replace(/^http/, "ws")}/api/events/${id}`;
-      const qr = `openid4vp://?client_id=${encodeURIComponent(identity.didKey)}&request_uri=${encodeURIComponent(requestUri)}`;
+      const authorizeBase = wallet === "twdiw" ? "modadigitalwallet://authorize" : "openid4vp://";
+      const qr = `${authorizeBase}?client_id=${encodeURIComponent(identity.didKey)}&request_uri=${encodeURIComponent(requestUri)}`;
       return json(request, { id, resultKey, eventsUrl, qr, qrSvg: qrSvg(qr), requestUri, responseUri, clientId: identity.didKey });
     }
 
