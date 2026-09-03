@@ -16,7 +16,7 @@ Determine which outcome is requested:
 - API integration into an existing service
 - A new verification profile
 
-Confirm the public HTTPS origin, desired credential wallets, verification purpose, claims, and accepted issuer policy. Ask before making an external deployment or changing an issuer allowlist when authority is not already explicit.
+Confirm the public HTTPS origin, desired credential wallets, verification purpose, and claims. The lite deployment uses the official DID registry and intentionally has no environment-variable issuer bypass.
 
 ## Read project guidance
 
@@ -36,7 +36,7 @@ Start from the business decision, then request the minimum claims needed for tha
 
 If any required claim is absent, the wallet may decline to present the credential. Do not silently substitute another field because it looks semantically similar.
 
-Government-issued cards should remain fail-closed against the official DID registry unless the operator explicitly authorizes a reviewed additional issuer in `TRUSTED_ISSUERS`.
+Government-issued cards must remain fail-closed against the official DID registry. Supporting a private issuer requires an explicit fork with its own trust policy and review; do not ask a deployer to paste a DID into a generic `trusted issuer` field.
 
 ## Integrate safely
 
@@ -44,11 +44,13 @@ Prefer one of these patterns:
 
 1. Link to a fixed `?profile=...&source=...` verifier page.
 2. Put the verifier behind the same origin and call its API from the browser.
-3. Call the verifier API from the existing service's backend and keep `resultKey` in a server session.
+3. Call the verifier API from the existing service's backend and proxy the one-time result WebSocket without persisting the result.
 
 Do not weaken `frame-ancestors 'none'` merely to support iframe embedding. Do not log credentials, presentations, QR payloads, disclosures, result capabilities, or personal data.
 
-The QR may contain the OIDC4VP `client_id` and `request_uri`. It must not contain `resultKey`. Treat the key as a bearer capability.
+The QR may contain the OIDC4VP `client_id` and `request_uri`. It must not contain `resultKey`. Authenticate the result WebSocket by sending the capability as the first WebSocket message, never in a URL.
+
+Do not persist credential, presentation, disclosed claims, or result objects in Durable Objects, KV, D1, R2, logs, traces, analytics, or an application database. Only pending-session metadata may be stored, and it must be deleted immediately after completion or by the 10-minute alarm.
 
 ## Validate before reporting completion
 
@@ -78,3 +80,4 @@ Report:
 - Remaining real-device cases
 - Any logging, retention, legal, or issuer-trust decisions the operator still owns
 
+State clearly that deployment is not official verifier registration. Organizations seeking official status must use https://www.wallet.gov.tw/apply/applyIssuerVerifier.html; this repository is independent of that process.

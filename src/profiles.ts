@@ -1,14 +1,17 @@
 import { findClaim } from "./age";
 
 export type CredentialSource = "government" | "selfIssued";
-export type DecisionStatus = "pass" | "not-established";
+export type WalletFamily = "twdiw" | "bonds";
+export type DecisionStatus = "pass" | "warning" | "not-established";
 
 export interface VerificationVariant {
   source: CredentialSource;
   sourceLabel: string;
+  wallets: WalletFamily[];
   claims: string[];
   credentialType?: string;
   claimLabels?: Record<string, string>;
+  compatibilityNote?: string;
 }
 
 export interface VerificationProfile {
@@ -30,6 +33,9 @@ export interface VerificationDecision {
 
 const GOVERNMENT = "數位憑證皮夾／有備而來收到的政府卡片";
 const SELF_ISSUED = "有備而來自發證件";
+const BOTH_WALLETS: WalletFamily[] = ["twdiw", "bonds"];
+const BONDS_ONLY: WalletFamily[] = ["bonds"];
+const CURRENT_SELF_ISSUED_NOTE = "需要由目前版本的有備而來重新建立、支援逐欄揭露的正式證件。舊版卡片只能完整出示，App 會拒絕這個最小揭露請求。";
 
 export const VERIFICATION_PROFILES: VerificationProfile[] = [
   {
@@ -39,7 +45,7 @@ export const VERIFICATION_PROFILES: VerificationProfile[] = [
     description: "適合酒類、活動入場或分級服務。目前使用有備而來自發身分證上的發證時已成年述詞。",
     resultQuestion: "這張卡能否證明持有人已滿 18 歲？",
     variants: [
-      { source: "selfIssued", sourceLabel: SELF_ISSUED, claims: ["over18AtIssuance"], credentialType: "NationalIDCredential" },
+      { source: "selfIssued", sourceLabel: SELF_ISSUED, wallets: BONDS_ONLY, claims: ["over18AtIssuance"], credentialType: "NationalIDCredential", compatibilityNote: CURRENT_SELF_ISSUED_NOTE },
     ],
     privacyNote: "只揭露發證時已滿 18 歲的布林述詞，不揭露出生日期。",
     policyNote: "這是自發證件內的簽署述詞，不是零知識證明。持有人一旦成年，這個 true 述詞不會隨時間失效。",
@@ -51,8 +57,8 @@ export const VERIFICATION_PROFILES: VerificationProfile[] = [
     description: "只要求姓名，適合預約、報到或名單核對。",
     resultQuestion: "卡片簽章是否涵蓋持有人揭露的姓名？",
     variants: [
-      { source: "government", sourceLabel: GOVERNMENT, claims: ["name"] },
-      { source: "selfIssued", sourceLabel: SELF_ISSUED, claims: ["name"], credentialType: "NationalIDCredential" },
+      { source: "government", sourceLabel: GOVERNMENT, wallets: BOTH_WALLETS, claims: ["name"] },
+      { source: "selfIssued", sourceLabel: SELF_ISSUED, wallets: BONDS_ONLY, claims: ["name"], credentialType: "NationalIDCredential", compatibilityNote: CURRENT_SELF_ISSUED_NOTE },
     ],
     privacyNote: "查驗端會看到完整姓名，不要求統一編號、生日或地址。",
     policyNote: "姓名相同不代表同一人；高風險流程仍需要另一個可核對的因素。",
@@ -64,19 +70,19 @@ export const VERIFICATION_PROFILES: VerificationProfile[] = [
     description: "重現統一超商取貨情境，只要求電信卡上的姓名與手機末五碼。",
     resultQuestion: "受信任電信卡是否簽署了姓名與手機末五碼？",
     variants: [
-      { source: "government", sourceLabel: GOVERNMENT, claims: ["name", "phonel5"] },
+      { source: "government", sourceLabel: GOVERNMENT, wallets: BOTH_WALLETS, claims: ["name", "phonel5"] },
     ],
     privacyNote: "查驗端會看到姓名與手機末五碼，不取得完整門號。",
     policyNote: "這能確認發卡內容與持有人金鑰綁定，不單獨證明 SIM 卡此刻仍由本人控制。",
   },
   {
     id: "driving-entitlement",
-    label: "確認駕照種類與有效性",
+    label: "核對駕照種類",
     shortLabel: "駕照",
     description: "要求駕照種類；簽章、持有人綁定、憑證效期與撤銷狀態由查驗器另外檢查。",
-    resultQuestion: "這是否為可驗證且仍有效的駕照電子卡？",
+    resultQuestion: "這是否為可驗證的駕照電子卡，且撤銷狀態能否另行確認？",
     variants: [
-      { source: "government", sourceLabel: GOVERNMENT, claims: ["license_type"] },
+      { source: "government", sourceLabel: GOVERNMENT, wallets: BOTH_WALLETS, claims: ["license_type"] },
     ],
     privacyNote: "不要求姓名、統一編號、生日、管轄編號或發證日期。",
     policyNote: "卡片種類須含 driverlicense 或 drivinglicense，並通過政府 issuer 信任檢查。",
@@ -88,8 +94,8 @@ export const VERIFICATION_PROFILES: VerificationProfile[] = [
     description: "確認卡片簽署了一個格式與檢查碼有效的國民身分證統一編號。",
     resultQuestion: "卡片能否證明持有人有有效格式的國民身分證統一編號？",
     variants: [
-      { source: "government", sourceLabel: GOVERNMENT, claims: ["id_number"] },
-      { source: "selfIssued", sourceLabel: SELF_ISSUED, claims: ["unifiedNo"], credentialType: "NationalIDCredential" },
+      { source: "government", sourceLabel: GOVERNMENT, wallets: BOTH_WALLETS, claims: ["id_number"] },
+      { source: "selfIssued", sourceLabel: SELF_ISSUED, wallets: BONDS_ONLY, claims: ["unifiedNo"], credentialType: "NationalIDCredential", compatibilityNote: CURRENT_SELF_ISSUED_NOTE },
     ],
     privacyNote: "查驗端會收到完整統一編號。若只需要成年或姓名，不應使用此情境。",
     policyNote: "有統一編號不應直接改寫成國籍、戶籍狀態或本人當下意願。",
@@ -101,7 +107,7 @@ export const VERIFICATION_PROFILES: VerificationProfile[] = [
     description: "讀取有備而來自發證件中的 nationality，確認卡片聲明為中華民國（臺灣）。",
     resultQuestion: "這張自發證件是否聲明中華民國國籍？",
     variants: [
-      { source: "selfIssued", sourceLabel: SELF_ISSUED, claims: ["nationality"], credentialType: "NationalIDCredential" },
+      { source: "selfIssued", sourceLabel: SELF_ISSUED, wallets: BONDS_ONLY, claims: ["nationality"], credentialType: "NationalIDCredential", compatibilityNote: CURRENT_SELF_ISSUED_NOTE },
     ],
     privacyNote: "只揭露國籍欄位，不揭露姓名、統一編號、生日或地址。",
     policyNote: "這個欄位由持卡人從 MyData 資料建立並以自然人憑證簽署，不能冒充政府發卡機關直接出具的國籍證明。",
@@ -112,8 +118,12 @@ export function getProfile(profileId: string): VerificationProfile | undefined {
   return VERIFICATION_PROFILES.find((profile) => profile.id === profileId);
 }
 
-export function getVariant(profile: VerificationProfile, source: CredentialSource): VerificationVariant | undefined {
-  return profile.variants.find((variant) => variant.source === source);
+export function getVariant(
+  profile: VerificationProfile,
+  source: CredentialSource,
+  wallet?: WalletFamily,
+): VerificationVariant | undefined {
+  return profile.variants.find((variant) => variant.source === source && (!wallet || variant.wallets.includes(wallet)));
 }
 
 export function publicProfiles(): VerificationProfile[] {
@@ -121,6 +131,7 @@ export function publicProfiles(): VerificationProfile[] {
     ...profile,
     variants: profile.variants.map((variant) => ({
       ...variant,
+      wallets: [...variant.wallets],
       claims: [...variant.claims],
       claimLabels: Object.fromEntries(variant.claims.map((name) => [name, claimLabel(name)])),
     })),
@@ -233,18 +244,16 @@ export function evaluateProfile(
         : { status: "not-established", title: "卡片種類不符", detail: "欄位存在，但卡片種類不在已實測的電信卡範圍。" };
     }
     case "driving-entitlement": {
-      if (credentialStatus !== "valid") {
-        return {
-          status: "not-established",
-          title: "無法確認駕照仍有效",
-          detail: "憑證簽章有效，但撤銷狀態不是可確認的 valid。",
-        };
-      }
       const type = resolvedCredentialType(claims, verifiedType)?.toLowerCase() ?? "";
       const known = ["driverlicense", "drivinglicense"].some((part) => type.includes(part));
-      return known
-        ? { status: "pass", title: "駕照電子卡驗證通過", detail: `卡片揭露的駕照種類為「${String(claims.license_type)}」。` }
-        : { status: "not-established", title: "卡片種類不符", detail: "欄位存在，但憑證類型不是已辨識的駕照電子卡。" };
+      if (!known) return { status: "not-established", title: "卡片種類不符", detail: "欄位存在，但憑證類型不是已辨識的駕照電子卡。" };
+      return credentialStatus === "valid"
+        ? { status: "pass", title: "駕照電子卡驗證通過", detail: `卡片揭露的駕照種類為「${String(claims.license_type)}」，狀態清單確認為有效。` }
+        : {
+            status: "warning",
+            title: "駕照種類已核對，撤銷狀態待確認",
+            detail: `簽章、持有人綁定、發卡者信任與「${String(claims.license_type)}」均已驗證；目前沒有取得可確認為 valid 的撤銷狀態。`,
+          };
     }
     case "national-id-number": {
       const value = source === "government" ? claims.id_number : claims.unifiedNo;

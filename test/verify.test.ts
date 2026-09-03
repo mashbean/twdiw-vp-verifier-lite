@@ -12,7 +12,7 @@
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { SignJWT, exportJWK, generateKeyPair } from "jose";
-import { verifySdJwtVc } from "../src/verify";
+import { verifiedExternalURL, verifySdJwtVc } from "../src/verify";
 
 const ISSUER = "https://issuer.test";
 const STATUS_URI = `${ISSUER}/statuslists/1`;
@@ -21,6 +21,23 @@ const NONCE = "test-nonce-0123456789";
 const STATUS_IDX = 5;
 
 const enc = new TextEncoder();
+
+describe("verification document URL policy", () => {
+  it("accepts public HTTPS hostnames", () => {
+    expect(verifiedExternalURL("https://issuer.example/status/1").hostname).toBe("issuer.example");
+  });
+
+  it.each([
+    "http://issuer.example/status/1",
+    "https://localhost/status/1",
+    "https://issuer.local/status/1",
+    "https://127.0.0.1/status/1",
+    "https://[::1]/status/1",
+    "https://user:pass@issuer.example/status/1",
+  ])("rejects unsafe verification document URL %s", (url) => {
+    expect(() => verifiedExternalURL(url)).toThrow(/public HTTPS hostname/);
+  });
+});
 
 function b64urlBytes(bytes: Uint8Array): string {
   let s = "";

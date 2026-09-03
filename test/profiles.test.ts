@@ -36,7 +36,15 @@ describe("verification profiles", () => {
     expect(getVariant(profile, "government")?.claims).toEqual(["license_type"]);
     expect(evaluateProfile("driving-entitlement", "government", { license_type: "普通小型車" }, "2-16-886-101_driverlicense_car", "valid").status).toBe("pass");
     expect(evaluateProfile("driving-entitlement", "government", { license_type: "普通小型車" }, "student_card", "valid").status).toBe("not-established");
-    expect(evaluateProfile("driving-entitlement", "government", { license_type: "普通小型車" }, "2-16-886-101_driverlicense_car", "unknown").title).toMatch(/無法確認/);
+    const unknown = evaluateProfile("driving-entitlement", "government", { license_type: "普通小型車" }, "2-16-886-101_driverlicense_car", "unknown");
+    expect(unknown.status).toBe("warning");
+    expect(unknown.title).toMatch(/撤銷狀態待確認/);
+  });
+
+  it("keeps the public wallet default separate from Bonds-only self-issued cards", () => {
+    expect(getVariant(getProfile("identity-name")!, "government", "twdiw")).toBeDefined();
+    expect(getVariant(getProfile("identity-name")!, "selfIssued", "twdiw")).toBeUndefined();
+    expect(getVariant(getProfile("identity-name")!, "selfIssued", "bonds")?.compatibilityNote).toMatch(/舊版卡片/);
   });
 
   it("returns only the fields the verifier requested", () => {

@@ -1,13 +1,15 @@
-# TWDIW VP Verifier Lite｜數位皮夾出示證件示範區
+# 請出示皮夾｜TWDIW VP Verifier Lite
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/mashbean/twdiw-vp-verifier-lite)
 [![CI](https://github.com/mashbean/twdiw-vp-verifier-lite/actions/workflows/ci.yml/badge.svg)](https://github.com/mashbean/twdiw-vp-verifier-lite/actions/workflows/ci.yml)
 
-把台灣數位憑證的查驗端縮成一個 Cloudflare Worker。按下部署按鈕後，Cloudflare 會建立 Worker、兩個 Durable Object binding 與 verifier 自己的 P-256 `did:key`，不需要另架資料庫或 Java 服務。
+輕量化查驗證件，支援數位皮夾。這個專案把台灣數位憑證的查驗端縮成一個 Cloudflare Worker。按下部署按鈕後，Cloudflare 會建立 Worker、兩個 Durable Object binding 與 verifier 自己的 P-256 `did:key`，不需要另架資料庫或 Java 服務。
 
 示範站：<https://verifier.mashbean.net>
 
 這個專案同時服務兩種使用者：持卡人可直接跑一次真實出示流程；業者可一鍵部署獨立查驗站，或透過 API 接進既有服務。
+
+查驗頁預設顯示數位發展部「數位憑證皮夾」可用的選項；「有備而來」尚未公開上架，因此另放在需要主動展開的相容測試區。
 
 支援的持卡端：
 
@@ -24,11 +26,15 @@
 3. 等待 Workers Builds 完成。
 4. 開啟新的 `workers.dev` 網址即可建立查驗 QR Code。
 
+這四步不需要填 `trusted issuer ID`。通用部署固定使用數位憑證皮夾官方 DID API；專案已移除容易誤設成信任繞道的自訂 issuer 環境變數。若未來要驗證自己的非官方發卡端，應在 fork 中明確增加信任政策、測試與稽核，不應把陌生 DID 貼進部署表單。
+
 Cloudflare 會依 `wrangler.jsonc` 自動建立 Durable Objects。部署完成後第一次開啟，`VerifierIdentity` 會在自己的 Durable Object 內產生 P-256 金鑰；私鑰不會出現在 repository、設定檔或前端回應。
 
 若要使用自己的網域，將它加到 Worker 的 Custom Domains，再把 `VERIFIER_ORIGIN` 設成完整 HTTPS origin。留空時會使用當前請求的 origin。
 
 也可以把 [部署 skill](skills/deploy-twdiw-vp-verifier-lite/SKILL.md) 安裝給 coding agent，或直接使用 [部署／內嵌 prompt](prompts/deploy-or-embed.md)。既有服務整合方式見 [docs/embedding.md](docs/embedding.md)。
+
+一鍵部署只建立獨立的開源查驗器，不會讓部署者成為數位發展部的註冊驗證者。正式申請須另走[數位憑證皮夾發行者／驗證者申請流程](https://www.wallet.gov.tw/apply/applyIssuerVerifier.html)；本專案與該註冊程序無關。
 
 ## 內建驗證情境
 
@@ -37,7 +43,7 @@ Cloudflare 會依 `wrangler.jsonc` 自動建立 Durable Objects。部署完成�
 | 已滿 18 歲 | `over18AtIssuance` | 有備而來自發身分證 | 只揭露簽署的成年述詞；目前不向缺少生日欄位的政府駕照卡提出無法完成的要求 |
 | 核對姓名 | `name` | 政府卡、自發身分證 | 姓名相同不等於同一人，高風險流程仍要第二因素 |
 | 超商取貨 | `name` + `phonel5` | 已實測的三種電信卡型別 | 證明 issuer 簽署內容與 holder key 綁定，不等於 SIM 此刻仍由本人控制 |
-| 駕照資格 | `license_type` | `driverlicense` / `drivinglicense` 卡型 | 同時驗證憑證有效期與狀態；不要求姓名、統一編號、生日或管轄編號 |
+| 駕照種類 | `license_type` | `driverlicense` / `drivinglicense` 卡型 | 簽章、holder binding 與 issuer 信任通過後，撤銷狀態仍可能是 `unknown`；介面會顯示警告，不會把它誤寫成仍有效 |
 | 統一編號 | `id_number` / `unifiedNo` | 政府卡、自發身分證 | 會收到完整號碼，並檢查格式及檢查碼；不可直接推論當前國籍或戶籍 |
 | 國籍欄位 | `nationality` | 自發身分證 | 這是持卡人用自然人憑證簽署的 MyData 衍生欄位，不冒充政府機關直接出具的國籍證明 |
 
@@ -48,6 +54,8 @@ https://your-worker.example/?profile=adult-18&source=selfIssued
 https://your-worker.example/?profile=telecom-pickup&source=government
 ```
 
+可加上 `wallet=twdiw` 或 `wallet=bonds`；未指定時預設 `twdiw`。有備而來自發證件的逐欄情境需要以目前版本重新建立卡片。舊版卡片只能完整出示，App 會拒絕最小揭露要求；這不是 verifier 可以在伺服器端安全繞過的限制。
+
 機器可讀的完整清單在 `GET /api/profiles`。
 
 ## API
@@ -57,7 +65,7 @@ https://your-worker.example/?profile=telecom-pickup&source=government
 ```bash
 curl -X POST https://your-worker.example/api/presentations \
   -H 'content-type: application/json' \
-  --data '{"profileId":"adult-18","credentialSource":"selfIssued"}'
+  --data '{"profileId":"identity-name","walletFamily":"twdiw","credentialSource":"government"}'
 ```
 
 回應包含：
@@ -65,22 +73,19 @@ curl -X POST https://your-worker.example/api/presentations \
 - `qr`：跨裝置掃描的 `openid4vp://` deep link
 - `qrSvg`：可直接嵌入頁面的 QR SVG
 - `requestUri`：錢包取得 signed Authorization Request 的位置
-- `resultKey`：查詢結果需要的 256-bit capability；不會放進 QR 或 request object
+- `eventsUrl`：同源一次性 WebSocket；瀏覽器須連線後以第一個 message 提交 `resultKey`
+- `resultKey`：訂閱結果需要的 256-bit capability；不會放進 URL、QR 或 request object
 
-查詢結果：
+前端在顯示 QR 前連上 `eventsUrl`，送出 `{"type":"subscribe","resultKey":"…"}`。驗證結果只經這條已授權的 WebSocket 傳回，不提供輪詢 endpoint。
 
-```text
-GET /api/result/{id}?key={resultKey}
-```
-
-Presentation session 保存 10 分鐘後由 Durable Object alarm 刪除。結果只保留情境要求的欄位，不保存未要求的 SD-JWT claims。
+Durable Object 只暫存 nonce、state、結果 capability、驗證情境與要求的「欄位名稱」，不保存 presentation、credential、揭露值、姓名、電話或統一編號。收到回應後，Worker 在單次請求記憶體內完成驗證並送出結果，隨即刪除 session metadata；未完成的 session 最長 10 分鐘後由 alarm 刪除。
 
 ## 驗證內容
 
 政府卡的查驗順序：
 
 1. 從 presentation 找到 issuer DID，只用來查信任來源。
-2. 要求官方 DID API 回傳同一個、狀態為啟用的 issuer；若部署者另設 `TRUSTED_ISSUERS`，精確相符者也可通過。
+2. 要求官方 DID API 回傳同一個、狀態為啟用的 issuer；通用版本沒有環境變數 allowlist 繞道。
 3. 用 `did:key` 內嵌公鑰驗證 credential signature。
 4. 重新計算每個 SD-JWT disclosure digest，只開啟 request 指定的欄位。
 5. 驗證 holder proof 的 signature、`nonce`、`aud` 與 credential `cnf.jwk` 綁定。
@@ -130,25 +135,26 @@ npx wrangler deploy --dry-run
 |---|---|---|
 | `VERIFIER_ORIGIN` | 空白 | request/response 的公開 HTTPS origin；空白時取目前 origin |
 | `OFFICIAL_TRUST_REGISTRY_URL` | `https://frontend.wallet.gov.tw/api/did` | 以 `/{issuerDid}` 查詢的官方 DID API base URL；查不到時拒絕 |
-| `TRUSTED_ISSUERS` | 空白 | 逗號分隔的額外精確 allowlist，適合自有發卡端或測試環境 |
-
-`TRUSTED_ISSUERS` 是信任決策，不是一般相容性開關。加入 DID 前應確認組織身分、金鑰管理、撤銷流程與事故回應方式。
 
 ## 安全與隱私限制
 
-- session UUID 與獨立 `resultKey` 分離；拿到 QR 的錢包不會自動取得 browser 查詢結果的 capability。
-- response body 上限 512 KB，session 10 分鐘自動清除，所有動態 API 回應設定 `no-store`。
+- session UUID 與獨立 `resultKey` 分離；拿到 QR 的錢包不會自動取得 browser 查驗結果的 capability。capability 經 WebSocket message 傳送，不進 URL。
+- response body 上限 512 KB。presentation、credential、揭露值與結果不寫入 Durable Object；完成後立即清除 metadata，未完成 session 10 分鐘自動清除。
 - 網頁採同源 CSP，不載入第三方 script、字型或 analytics。
-- 部署者仍可能在 Cloudflare 平台層啟用 request log。正式服務應關閉會保存 body、query string 或完整路徑的外部日誌，並訂定資料留存政策。
+- `wrangler.jsonc` 預設停用 Workers Logs、invocation logs 與 traces 持久化。部署者若自行開啟平台或外部日誌，須維持不記錄 body、credential、capability 與個資的界線。
+- credential 內指定的遠端狀態文件只允許公共 HTTPS hostname，拒絕 credentials、literal IP、localhost、redirect、逾時與過大回應，降低 SSRF 與資源耗盡風險。
 - verifier identity 是單一部署的持久識別。更換 Durable Object namespace 會產生新的 `did:key`，既有整合需重新信任。
 - 自發證件格式 `vc+moica` 是「有備而來」的明示 extension，不宣稱為標準 SD-JWT VC。
 
 弱點請依 [SECURITY.md](SECURITY.md) 私下回報，不要把真實 credential、QR、presentation 或個資貼到公開 issue。
 
+2026-09-03 的 Cloudflare/Workers 資安檢查、修正與剩餘風險見 [docs/security-audit-2026-09-03.md](docs/security-audit-2026-09-03.md)。
+
 ## 相關連結
 
 - [有備而來](https://bonds.tw)
 - [數位發展部數位憑證皮夾](https://wallet.gov.tw/)
+- [官方發行者／驗證者申請流程](https://www.wallet.gov.tw/apply/applyIssuerVerifier.html)
 - [TWDIW official app 原始碼](https://github.com/moda-gov-tw/TWDIW-official-app)
 - [TWDIW 官方文件](https://github.com/moda-gov-tw/TWDIW-official-app/tree/main/Docs)
 - [OpenID for Verifiable Presentations 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html)

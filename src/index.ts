@@ -2,7 +2,7 @@ import qrcode from "qrcode-generator";
 import { PresentationSession } from "./session";
 import { VerifierIdentity } from "./identity";
 import { FRONTEND_CSS, FRONTEND_HTML, FRONTEND_JS } from "./frontend";
-import { getProfile, getVariant, publicProfiles, type CredentialSource } from "./profiles";
+import { getProfile, getVariant, publicProfiles, type CredentialSource, type WalletFamily } from "./profiles";
 
 export { PresentationSession, VerifierIdentity };
 
@@ -89,13 +89,15 @@ export default {
       if (declaredLength > MAX_CREATE_BODY) return json(request, { error: "request body is too large" }, { status: 413 });
       const raw = await request.text();
       if (raw.length > MAX_CREATE_BODY) return json(request, { error: "request body is too large" }, { status: 413 });
-      let body: { profileId?: unknown; credentialSource?: unknown };
+      let body: { profileId?: unknown; credentialSource?: unknown; walletFamily?: unknown };
       try { body = raw ? JSON.parse(raw) as typeof body : {}; }
       catch { return json(request, { error: "request body must be JSON" }, { status: 400 }); }
       const profile = getProfile(typeof body.profileId === "string" ? body.profileId : "adult-18");
       const source = body.credentialSource as CredentialSource;
-      if (!profile || !["government", "selfIssued"].includes(source) || !getVariant(profile, source)) {
-        return json(request, { error: "unsupported profile or credential source" }, { status: 400 });
+      const wallet = (body.walletFamily ?? (source === "selfIssued" ? "bonds" : "twdiw")) as WalletFamily;
+      if (!profile || !["government", "selfIssued"].includes(source)
+          || !["twdiw", "bonds"].includes(wallet) || !getVariant(profile, source, wallet)) {
+        return json(request, { error: "unsupported profile, wallet or credential source" }, { status: 400 });
       }
 
       const id = crypto.randomUUID();
@@ -108,11 +110,13 @@ export default {
         responseUri,
         resultKey,
         profileId: profile.id,
+        walletFamily: wallet,
         credentialSource: source,
       });
       const requestUri = `${origin}/api/request/${id}`;
+      const eventsUrl = `${origin.replace(/^http/, "ws")}/api/events/${id}`;
       const qr = `openid4vp://?client_id=${encodeURIComponent(identity.didKey)}&request_uri=${encodeURIComponent(requestUri)}`;
-      return json(request, { id, resultKey, qr, qrSvg: qrSvg(qr), requestUri, responseUri, clientId: identity.didKey });
+      return json(request, { id, resultKey, eventsUrl, qr, qrSvg: qrSvg(qr), requestUri, responseUri, clientId: identity.didKey });
     }
 
     const requestMatch = path.match(/^\/api\/request\/([0-9a-f-]{36})$/);
@@ -138,10 +142,12 @@ export default {
       return json(request, result, { status: result.status === "failed" ? 400 : result.status === "gone" ? 404 : 200 });
     }
 
-    const resultMatch = path.match(/^\/api\/result\/([0-9a-f-]{36})$/);
-    if (request.method === "GET" && resultMatch && validSessionId(resultMatch[1])) {
-      const result = await env.SESSIONS.getByName(resultMatch[1]).result(url.searchParams.get("key") ?? "");
-      return result ? json(request, result) : json(request, { status: "gone" }, { status: 404 });
+    const eventsMatch = path.match(/^\/api\/events\/([0-9a-f-]{36})$/);
+    if (request.method === "GET" && eventsMatch && validSessionId(eventsMatch[1])) {
+      if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
+        return respond(request, "expected websocket", { status: 426, headers: { "cache-control": "no-store" } });
+      }
+      return env.SESSIONS.getByName(eventsMatch[1]).fetch(request);
     }
 
     return respond(request, "not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });

@@ -3,11 +3,24 @@ import { FRONTEND_HTML, FRONTEND_JS } from "../src/frontend";
 
 describe("landing page", () => {
   it("presents the citizen and service-provider paths", () => {
-    expect(FRONTEND_HTML).toContain("數位皮夾出示證件示範區");
+    expect(FRONTEND_HTML).toContain("請出示皮夾");
+    expect(FRONTEND_HTML).toContain("輕量化查驗證件，支援數位皮夾");
     expect(FRONTEND_HTML).toContain("支援數位發展部「數位憑證皮夾」，讓你可以一鍵建立自己的驗證服務");
     expect(FRONTEND_HTML).toContain("我是民眾，開始測試");
     expect(FRONTEND_HTML).toContain("我是業者，免費建立服務");
     expect(FRONTEND_HTML).toContain("開始前常見的問題");
+  });
+
+  it("defaults to the official wallet and keeps Bonds behind an explicit choice", () => {
+    expect(FRONTEND_HTML).toContain("數位憑證皮夾</strong><small>數位發展部公開版本 · 預設");
+    expect(FRONTEND_HTML).toContain("<details id=\"bonds-picker\"");
+    expect(FRONTEND_JS).toContain("wallet:'twdiw'");
+  });
+
+  it("receives a one-time result without polling a capability in the URL", () => {
+    expect(FRONTEND_JS).toContain("new WebSocket(url)");
+    expect(FRONTEND_JS).not.toContain("/api/result/");
+    expect(FRONTEND_JS).not.toContain("setInterval");
   });
 
   it("links the renamed repository and developer resources", () => {

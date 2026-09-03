@@ -7,7 +7,11 @@
   "compatibility_flags": ["nodejs_compat"],
   "account_id": "fd8f8ed12dcdfd03ad171a3a74bc712a",
   "routes": [{ "pattern": "verifier.mashbean.net", "custom_domain": true }],
-  "observability": { "enabled": true },
+  "observability": {
+    "enabled": false,
+    "logs": { "enabled": false, "invocation_logs": false, "persist": false },
+    "traces": { "enabled": false, "persist": false }
+  },
   "durable_objects": {
     "bindings": [
       { "name": "SESSIONS", "class_name": "PresentationSession" },
@@ -20,7 +24,6 @@
   ],
   "vars": {
     "OFFICIAL_TRUST_REGISTRY_URL": "https://frontend.wallet.gov.tw/api/did",
-    "TRUSTED_ISSUERS": "",
     "VERIFIER_ORIGIN": "https://verifier.mashbean.net"
   }
 }

@@ -58,7 +58,7 @@ export async function verifyModaVpToken(
     const disclosures = parts.slice(1).filter(Boolean); // trailing "~" leaves an empty tail
 
     const base = await verifyIssuerCredential(issuerJwt, disclosures, opts.trustedIssuers);
-    if (!base.ok) return { ok: false, reason: base.reason, vct: base.vct, issuer: base.issuer, status: base.status };
+    if (!base.ok) return { ok: false, reason: base.reason, vct: base.vct, issuer: base.issuer, status: base.status, statusReason: base.statusReason };
 
     // 3. The binding: the presented credential must be bound (its `cnf`) to the key
     // that signed the presentation. Compared by JWK thumbprint so member order and
@@ -72,7 +72,7 @@ export async function verifyModaVpToken(
       return { ok: false, reason: "presentation key does not match the credential's cnf" };
     }
 
-    return { ok: true, vct: base.vct, issuer: base.issuer, claims: base.claims, keyBound: true, holderBound: true, status: base.status };
+    return { ok: true, vct: base.vct, issuer: base.issuer, claims: base.claims, keyBound: true, holderBound: true, status: base.status, statusReason: base.statusReason };
   } catch (e) {
     return { ok: false, reason: e instanceof Error ? e.message : "vp_token verification error" };
   }

@@ -4,7 +4,11 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-09-03",
   "compatibility_flags": ["nodejs_compat"],
-  "observability": { "enabled": true },
+  "observability": {
+    "enabled": false,
+    "logs": { "enabled": false, "invocation_logs": false, "persist": false },
+    "traces": { "enabled": false, "persist": false }
+  },
   "durable_objects": {
     "bindings": [
       { "name": "SESSIONS", "class_name": "PresentationSession" },
@@ -17,7 +21,6 @@
   ],
   "vars": {
     "OFFICIAL_TRUST_REGISTRY_URL": "https://frontend.wallet.gov.tw/api/did",
-    "TRUSTED_ISSUERS": "",
     "VERIFIER_ORIGIN": ""
   }
 }

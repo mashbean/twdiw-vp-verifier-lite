@@ -20,7 +20,6 @@
 // Web Crypto + jose only — everything here runs on Cloudflare Workers.
 
 import {
-  createRemoteJWKSet,
   jwtVerify,
   decodeProtectedHeader,
   decodeJwt,
@@ -46,6 +45,8 @@ export interface VerifyResult {
   keyBound?: boolean;
   /** "valid" / "revoked" / "suspended" / "unknown" — the Token Status List check. */
   status?: RevocationStatus;
+  /** Non-personal diagnostic describing why status is unknown. */
+  statusReason?: string;
 }
 
 /** The issuer-signed half, plus the holder key the issuer bound it to (`cnf`). */
@@ -58,9 +59,58 @@ export interface IssuerCredentialResult {
   /** The `cnf.jwk` the credential is bound to — what a holder proof must match. */
   cnf?: JWK;
   status?: RevocationStatus;
+  statusReason?: string;
 }
 
 const enc = new TextEncoder();
+const MAX_REMOTE_DOCUMENT_BYTES = 1_000_000;
+
+export function verifiedExternalURL(value: string): URL {
+  const url = new URL(value);
+  const host = url.hostname.toLowerCase();
+  const isIPv4 = /^(?:\d{1,3}\.){3}\d{1,3}$/.test(host);
+  const isLocalName = host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local");
+  const isLiteralIPv6 = host.includes(":");
+  if (url.protocol !== "https:" || url.username || url.password || isIPv4 || isLiteralIPv6 || isLocalName) {
+    throw new Error("remote verification document must use a public HTTPS hostname");
+  }
+  return url;
+}
+
+async function fetchVerificationDocument(value: string, accept: string): Promise<Response> {
+  const response = await fetch(verifiedExternalURL(value), {
+    headers: { accept },
+    redirect: "error",
+    signal: AbortSignal.timeout(5_000),
+  });
+  const declared = Number(response.headers.get("content-length") ?? 0);
+  if (declared > MAX_REMOTE_DOCUMENT_BYTES) throw new Error("remote verification document is too large");
+  return response;
+}
+
+async function limitedText(response: Response): Promise<string> {
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    length += value.byteLength;
+    if (length > MAX_REMOTE_DOCUMENT_BYTES) {
+      await reader.cancel("remote verification document is too large");
+      throw new Error("remote verification document is too large");
+    }
+    chunks.push(value);
+  }
+  const combined = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    combined.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(combined);
+}
 
 async function sha256b64url(input: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", enc.encode(input));
@@ -99,11 +149,11 @@ async function issuerKeySet(iss: string) {
     if (!jwk) throw new Error(`unsupported did:key issuer: ${iss.slice(0, 24)}…`);
     return async (header: { kid?: string; alg?: string }) => importJWK(jwk, header.alg ?? "ES256");
   }
-  const u = new URL(iss);
+  const u = verifiedExternalURL(iss);
   const metadataUrl = `${u.origin}/.well-known/jwt-vc-issuer${u.pathname}`;
-  const res = await fetch(metadataUrl, { headers: { accept: "application/json" } });
+  const res = await fetchVerificationDocument(metadataUrl, "application/json");
   if (!res.ok) throw new Error(`issuer metadata ${res.status} at ${metadataUrl}`);
-  const meta = (await res.json()) as { jwks?: { keys: JWK[] }; jwks_uri?: string };
+  const meta = JSON.parse(await limitedText(res)) as { jwks?: { keys: JWK[] }; jwks_uri?: string };
   if (meta.jwks?.keys?.length) {
     return async (header: { kid?: string; alg?: string }) => {
       const jwk = meta.jwks!.keys.find((k) => !header.kid || (k as { kid?: string }).kid === header.kid) ?? meta.jwks!.keys[0];
@@ -111,8 +161,15 @@ async function issuerKeySet(iss: string) {
     };
   }
   if (meta.jwks_uri) {
-    const remote = createRemoteJWKSet(new URL(meta.jwks_uri));
-    return async (header: { kid?: string; alg?: string }) => remote({ kid: header.kid, alg: header.alg } as never);
+    const jwksResponse = await fetchVerificationDocument(meta.jwks_uri, "application/jwk-set+json, application/json");
+    if (!jwksResponse.ok) throw new Error(`issuer JWKS ${jwksResponse.status}`);
+    const jwks = JSON.parse(await limitedText(jwksResponse)) as { keys?: JWK[] };
+    if (!jwks.keys?.length) throw new Error("issuer JWKS has no keys");
+    return async (header: { kid?: string; alg?: string }) => {
+      const jwk = jwks.keys!.find((candidate) => !header.kid || (candidate as { kid?: string }).kid === header.kid);
+      if (!jwk) throw new Error("issuer JWKS has no matching key");
+      return importJWK(jwk, header.alg ?? "ES256");
+    };
   }
   throw new Error("issuer metadata has neither jwks nor jwks_uri");
 }
@@ -191,9 +248,9 @@ function twdiwStatusEntries(payload: Record<string, unknown>): Array<{
  * a gzip+base64 `encodedList`. The bit order is MSB-first, matching the official
  * verifier implementation's 0x80 → 0x01 mask table. */
 async function checkTwdiwStatusList(entry: { index: number; uri: string; purpose: string }): Promise<RevocationStatus> {
-  const response = await fetch(entry.uri, { headers: { accept: "application/vc+jwt, application/jwt" } });
+  const response = await fetchVerificationDocument(entry.uri, "application/vc+jwt, application/jwt");
   if (!response.ok) throw new Error(`status list ${response.status}`);
-  const token = (await response.text()).trim();
+  const token = (await limitedText(response)).trim();
   const header = decodeProtectedHeader(token) as { alg?: string; kid?: string };
   const unverified = decodeJwt(token) as Record<string, unknown>;
   const issuer = String(unverified.iss ?? "");
@@ -234,9 +291,9 @@ async function checkRevocation(payload: Record<string, unknown>): Promise<{ stat
     }
   }
   try {
-    const res = await fetch(ref.uri, { headers: { accept: "application/statuslist+jwt" } });
+    const res = await fetchVerificationDocument(ref.uri, "application/statuslist+jwt");
     if (!res.ok) return { status: "unknown", reason: `status list ${res.status}` };
-    const token = (await res.text()).trim();
+    const token = (await limitedText(res)).trim();
     const stHeader = decodeProtectedHeader(token) as { alg?: string; kid?: string; typ?: string };
     const stPayload = decodeJwt(token) as Record<string, unknown>;
     const stIss = String(stPayload.iss ?? "");
@@ -298,7 +355,7 @@ export async function verifyIssuerCredential(
 
   const revocation = await checkRevocation(payload);
   if (revocation.status === "revoked" || revocation.status === "suspended") {
-    return { ok: false, reason: `credential is ${revocation.status}`, vct: typeof payload.vct === "string" ? payload.vct : undefined, issuer: iss, status: revocation.status };
+    return { ok: false, reason: `credential is ${revocation.status}`, vct: typeof payload.vct === "string" ? payload.vct : undefined, issuer: iss, status: revocation.status, statusReason: revocation.reason };
   }
 
   return {
@@ -308,6 +365,7 @@ export async function verifyIssuerCredential(
     claims,
     cnf: (payload.cnf as { jwk?: JWK } | undefined)?.jwk,
     status: revocation.status,
+    statusReason: revocation.reason,
   };
 }
 
@@ -328,7 +386,7 @@ export async function verifySdJwtVc(vpToken: string, opts: VerifyOptions): Promi
     if (!kbJwt) return { ok: false, reason: "presentation has no key-binding JWT" };
 
     const base = await verifyIssuerCredential(issuerJwt, disclosures, opts.trustedIssuers);
-    if (!base.ok) return { ok: false, reason: base.reason, vct: base.vct, issuer: base.issuer, status: base.status };
+    if (!base.ok) return { ok: false, reason: base.reason, vct: base.vct, issuer: base.issuer, status: base.status, statusReason: base.statusReason };
 
     let keyBound = false;
     if (kbJwt) {
@@ -347,7 +405,7 @@ export async function verifySdJwtVc(vpToken: string, opts: VerifyOptions): Promi
       keyBound = true;
     }
 
-    return { ok: true, vct: base.vct, issuer: base.issuer, claims: base.claims, keyBound, status: base.status };
+    return { ok: true, vct: base.vct, issuer: base.issuer, claims: base.claims, keyBound, status: base.status, statusReason: base.statusReason };
   } catch (e) {
     return { ok: false, reason: e instanceof Error ? e.message : "verification error" };
   }

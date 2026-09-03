@@ -58,7 +58,7 @@ OIDC4VP 1.0 Final 的等價方向是 DCQL：
 
 查驗頁不把所有成功條件壓成一個綠勾：
 
-1. **Issuer trust**：DID 在官方 API 啟用，或在部署者的精確 allowlist。若 API 記錄另帶有效鏈上交易，作為第二份可稽核證據顯示。
+1. **Issuer trust**：DID 必須在官方 API 啟用。通用版不提供環境變數 allowlist；若 API 記錄另帶有效鏈上交易，作為第二份可稽核證據顯示。
 2. **Cryptographic verification**：credential、disclosure、holder proof、nonce、audience、`cnf` 與 status list 均符合。
 3. **Policy decision**：例如生日換算後已滿 18 歲，或 credential type 確實屬於駕照。
 

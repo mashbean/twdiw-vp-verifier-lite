@@ -10,7 +10,7 @@
 - 公開 HTTPS 網址：[例如 https://verify.example.com]
 - 要支援的皮夾：[數位發展部「數位憑證皮夾」／有備而來／兩者]
 - 驗證目的：[例如核對姓名、門號末五碼、成年資格、駕照資格]
-- 可接受的發卡者：[官方信任清單／另列自有 issuer DID]
+- 發卡者信任：[預設使用官方 DID 信任清單；自有 issuer 需另做 trust-policy fork]
 
 實作要求
 1. 先讀取 repository 的 README、docs/embedding.md 與 skills/deploy-twdiw-vp-verifier-lite/SKILL.md。
@@ -18,8 +18,8 @@
 3. 使用 Cloudflare Workers 與 Durable Objects。設定 VERIFIER_ORIGIN 為實際公開 HTTPS origin。
 4. 既有部署更新時保留 Worker、Durable Object namespace 與 verifier did:key；不得為了改名重建 identity。
 5. 只要求業務目的真正需要的 claims。卡片實際欄位不明時，先取得去識別化 schema 或在測試環境確認，不猜欄位名稱。
-6. 官方卡預設以官方 DID API 驗證 issuer。新增 TRUSTED_ISSUERS 前，先說明信任與風險影響並取得確認。
-7. 不把 credential、presentation、QR payload、resultKey、姓名、證號、電話或 disclosure 寫入 application log、analytics 或錯誤追蹤。
+6. 官方卡以官方 DID API 驗證 issuer。不要建立讓部署者隨手填入 trusted issuer DID 的通用欄位。
+7. credential、presentation、揭露 claims 與 result 只能在單次請求記憶體中處理，經 capability 驗證的 WebSocket 傳回後立即丟棄。不得寫入 Durable Object、KV、D1、R2、application log、Workers Logs、analytics 或錯誤追蹤；resultKey 不得進入 URL。
 8. 不以 iframe 內嵌查驗頁。整合既有服務時使用同源 API、後端呼叫，或導向帶 profile/source query string 的查驗頁。
 9. 不宣稱已通過 OpenID Foundation conformance certification。標示目前為 TWDIW Presentation Exchange 加 OIDC4VP 1.0 DCQL 相容層。
 
@@ -30,9 +30,11 @@
 - npx wrangler deploy --dry-run
 - 部署後確認首頁與 /api/profiles 回傳 HTTP 200
 - 建立查驗，確認 QR 只包含 client_id 與 request_uri，resultKey 沒有進入 QR 或 signed request
+- 確認 resultKey 只經第一個 WebSocket message 傳送，presentation、claims 與 result 沒有寫入任何 Cloudflare storage
 - 記錄部署版本、公開網址與 verifier did:key 是否保持不變
 - 將真實皮夾、真實卡片與跨裝置出示列成獨立實機驗收，不把 fixture 或本機測試當成完成證據
 
 最後請回報已完成、尚未完成與實機驗收步驟。不要輸出任何 secret 或真實個資。
-```
 
+一鍵部署與數位發展部的官方驗證者註冊是兩件事。若需要正式註冊，請另外導向 https://www.wallet.gov.tw/apply/applyIssuerVerifier.html，不得宣稱本專案能代辦或完成官方註冊。
+```

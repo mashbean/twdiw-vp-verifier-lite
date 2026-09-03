@@ -1,6 +1,6 @@
 import { decodeJwt } from "jose";
 
-export type TrustSource = "allowlist" | "official-api";
+export type TrustSource = "official-api";
 
 export interface IssuerTrustEvidence {
   trusted: boolean;
@@ -63,22 +63,13 @@ export function unverifiedGovernmentIssuer(vpToken: string): string | undefined 
   }
 }
 
-function trustedAllowlist(raw: string | undefined): string[] {
-  return (raw ?? "").split(",").map((value) => value.trim()).filter(Boolean);
-}
-
 export async function resolveGovernmentIssuerTrust(
   issuer: string,
   options: {
-    allowlist?: string;
     officialRegistryURL?: string;
     fetcher?: typeof fetch;
   } = {},
 ): Promise<IssuerTrustEvidence> {
-  if (trustedAllowlist(options.allowlist).includes(issuer)) {
-    return { trusted: true, source: "allowlist", issuer, onChain: false };
-  }
-
   const base = (options.officialRegistryURL ?? DEFAULT_OFFICIAL_TRUST_REGISTRY).replace(/\/$/, "");
   if (!base) return { trusted: false, issuer, onChain: false, reason: "沒有設定可用的 issuer 信任來源" };
   const registryURL = `${base}/${encodeURIComponent(issuer)}`;

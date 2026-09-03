@@ -43,10 +43,10 @@ describe("government issuer trust", () => {
     expect(result.trusted).toBe(false);
   });
 
-  it("allows an explicitly configured issuer without calling the API", async () => {
-    const fetcher = vi.fn() as unknown as typeof fetch;
-    const result = await resolveGovernmentIssuerTrust("did:key:zLocal", { allowlist: "did:key:zLocal", fetcher });
-    expect(result).toMatchObject({ trusted: true, source: "allowlist" });
-    expect(fetcher).not.toHaveBeenCalled();
+  it("does not provide an unreviewed environment-variable trust bypass", async () => {
+    const fetcher = vi.fn(async () => Response.json({ code: "1", data: null })) as typeof fetch;
+    const result = await resolveGovernmentIssuerTrust("did:key:zLocal", { fetcher });
+    expect(result.trusted).toBe(false);
+    expect(fetcher).toHaveBeenCalledOnce();
   });
 });
