@@ -1,5 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
+  // Keep this production Worker name to preserve the existing Durable Object namespaces and verifier did:key.
   "name": "mashbean-vp-verifier",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-03",

@@ -1,9 +1,15 @@
 {
-  "name": "mashbean-vp-verifier",
+  "name": "twdiw-vp-verifier-lite",
   "version": "0.2.0",
   "private": false,
   "type": "module",
   "description": "OIDC4VP verifier for Taiwan TWDIW SD-JWT-VC and 有備而來 vc+moica credentials on Cloudflare Workers.",
+  "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mashbean/twdiw-vp-verifier-lite.git"
+  },
+  "homepage": "https://verifier.mashbean.net",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",

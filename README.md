@@ -1,11 +1,13 @@
-# 自由查驗 — 台灣數位憑證 OIDC4VP Verifier
+# TWDIW VP Verifier Lite｜數位皮夾出示證件示範區
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/mashbean/mashbean-vp-verifier)
-[![CI](https://github.com/mashbean/mashbean-vp-verifier/actions/workflows/ci.yml/badge.svg)](https://github.com/mashbean/mashbean-vp-verifier/actions/workflows/ci.yml)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/mashbean/twdiw-vp-verifier-lite)
+[![CI](https://github.com/mashbean/twdiw-vp-verifier-lite/actions/workflows/ci.yml/badge.svg)](https://github.com/mashbean/twdiw-vp-verifier-lite/actions/workflows/ci.yml)
 
 把台灣數位憑證的查驗端縮成一個 Cloudflare Worker。按下部署按鈕後，Cloudflare 會建立 Worker、兩個 Durable Object binding 與 verifier 自己的 P-256 `did:key`，不需要另架資料庫或 Java 服務。
 
 示範站：<https://verifier.mashbean.net>
+
+這個專案同時服務兩種使用者：持卡人可直接跑一次真實出示流程；業者可一鍵部署獨立查驗站，或透過 API 接進既有服務。
 
 支援的持卡端：
 
@@ -25,6 +27,8 @@
 Cloudflare 會依 `wrangler.jsonc` 自動建立 Durable Objects。部署完成後第一次開啟，`VerifierIdentity` 會在自己的 Durable Object 內產生 P-256 金鑰；私鑰不會出現在 repository、設定檔或前端回應。
 
 若要使用自己的網域，將它加到 Worker 的 Custom Domains，再把 `VERIFIER_ORIGIN` 設成完整 HTTPS origin。留空時會使用當前請求的 origin。
+
+也可以把 [部署 skill](skills/deploy-twdiw-vp-verifier-lite/SKILL.md) 安裝給 coding agent，或直接使用 [部署／內嵌 prompt](prompts/deploy-or-embed.md)。既有服務整合方式見 [docs/embedding.md](docs/embedding.md)。
 
 ## 內建驗證情境
 
@@ -118,7 +122,7 @@ npm run cf-typegen
 npx wrangler deploy --dry-run
 ```
 
-一般部署使用 repository 根目錄的通用 `wrangler.jsonc`。`wrangler.mashbean.jsonc` 只用來更新示範站，不應複製到自己的部署流程。
+一般部署使用 repository 根目錄的通用 `wrangler.jsonc`。`wrangler.mashbean.jsonc` 只用來更新示範站，不應複製到自己的部署流程。示範站設定刻意保留改名前的 Worker 名稱，避免重建 Durable Object namespace 與 verifier `did:key`。
 
 ## 設定
 
@@ -141,8 +145,16 @@ npx wrangler deploy --dry-run
 
 弱點請依 [SECURITY.md](SECURITY.md) 私下回報，不要把真實 credential、QR、presentation 或個資貼到公開 issue。
 
-## 來源與授權
+## 相關連結
 
-協定相容行為以數位發展部公開的 [TWDIW official app](https://github.com/moda-gov-tw/TWDIW-official-app) 與 [OpenID for Verifiable Presentations 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html) 為主要依據。
+- [有備而來](https://bonds.tw)
+- [數位發展部數位憑證皮夾](https://wallet.gov.tw/)
+- [TWDIW official app 原始碼](https://github.com/moda-gov-tw/TWDIW-official-app)
+- [TWDIW 官方文件](https://github.com/moda-gov-tw/TWDIW-official-app/tree/main/Docs)
+- [OpenID for Verifiable Presentations 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html)
 
-MIT License。專案名稱與介面不得解讀為數位發展部、發卡機關或電信業者的背書。
+## 授權
+
+本專案採 [GNU General Public License v3.0 only](LICENSE) 授權。專案名稱與介面不得解讀為數位發展部、發卡機關或電信業者的背書。
+
+Maintained by [mashbean](https://github.com/mashbean).
