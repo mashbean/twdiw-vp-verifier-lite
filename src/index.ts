@@ -3,6 +3,7 @@ import { PresentationSession } from "./session";
 import { VerifierIdentity } from "./identity";
 import { FRONTEND_CSS, FRONTEND_HTML, FRONTEND_JS } from "./frontend";
 import { getProfile, getVariant, publicProfiles, type CredentialSource, type WalletFamily } from "./profiles";
+import { PRIVACY_NOTICE, privacyCategoriesForClaims } from "./privacy-notice";
 
 export { PresentationSession, VerifierIdentity };
 
@@ -69,9 +70,17 @@ export default {
     if (request.method === "GET" && path === "/app.js") return staticAsset(request, FRONTEND_JS, "text/javascript");
 
     if (request.method === "GET" && path === "/api/profiles") {
+      const profiles = publicProfiles();
       return json(request, {
         protocolProfile: "TWDIW Presentation Exchange + OIDC4VP 1.0 DCQL compatibility",
-        profiles: publicProfiles(),
+        profiles,
+        privacyNotice: PRIVACY_NOTICE,
+        privacyCategories: Object.fromEntries(
+          profiles.flatMap((profile) => profile.variants).map((variant) => [
+            variant.claims.join("|"),
+            privacyCategoriesForClaims(variant.claims),
+          ]),
+        ),
       });
     }
 

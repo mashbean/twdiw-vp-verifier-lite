@@ -102,7 +102,7 @@ export const VERIFICATION_PROFILES: VerificationProfile[] = [
   },
   {
     id: "roc-nationality-declaration",
-    label: "檢查自發證件的國籍欄位",
+    label: "是否為台灣人（國籍欄位）",
     shortLabel: "國籍欄位",
     description: "讀取有備而來自發證件中的 nationality，確認卡片聲明為中華民國（臺灣）。",
     resultQuestion: "這張自發證件是否聲明中華民國國籍？",

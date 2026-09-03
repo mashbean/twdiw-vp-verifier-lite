@@ -11,10 +11,24 @@ describe("landing page", () => {
     expect(FRONTEND_HTML).toContain("開始前常見的問題");
   });
 
-  it("defaults to the official wallet and keeps Bonds behind an explicit choice", () => {
+  it("defaults to the official wallet and switches directly to Bonds", () => {
     expect(FRONTEND_HTML).toContain("數位憑證皮夾</strong><small>數位發展部公開版本 · 預設");
-    expect(FRONTEND_HTML).toContain("<details id=\"bonds-picker\"");
+    expect(FRONTEND_HTML).toContain("id=\"wallet-bonds\"");
+    expect(FRONTEND_HTML).not.toContain("id=\"bonds-picker\"");
     expect(FRONTEND_JS).toContain("wallet:'twdiw'");
+  });
+
+  it("keeps wallet-specific purposes visible but disabled", () => {
+    expect(FRONTEND_JS).toContain("button.disabled=unavailable");
+    expect(FRONTEND_JS).toContain("目前只支援有備而來新版自發證件");
+  });
+
+  it("requires an in-context personal-data notice before creating a request", () => {
+    expect(FRONTEND_HTML).toContain("個人資料蒐集、處理及利用告知");
+    expect(FRONTEND_HTML).toContain("id=\"privacy-ack\"");
+    expect(FRONTEND_HTML).toContain("完整告知事項與個資法依據");
+    expect(FRONTEND_JS).toContain("state.privacyNotice=body.privacyNotice");
+    expect(FRONTEND_JS).toContain("!$('privacy-ack').checked");
   });
 
   it("receives a one-time result without polling a capability in the URL", () => {

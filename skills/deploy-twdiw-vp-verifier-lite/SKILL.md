@@ -52,6 +52,8 @@ The QR may contain the OIDC4VP `client_id` and `request_uri`. It must not contai
 
 Do not persist credential, presentation, disclosed claims, or result objects in Durable Objects, KV, D1, R2, logs, traces, analytics, or an application database. Only pending-session metadata may be stored, and it must be deleted immediately after completion or by the 10-minute alarm.
 
+Keep the pre-presentation privacy notice module. Replace the demo controller, contact, purpose, lawful basis, categories, period, region, recipients, method, rights process, and refusal effect with the operator's real information. Read `docs/privacy-compliance.md`; do not represent the template as legal advice or automatic compliance certification. The notice must update with the selected profile and appear before the QR is created.
+
 ## Validate before reporting completion
 
 Run:
@@ -64,6 +66,8 @@ npx wrangler deploy --dry-run
 ```
 
 After an authorized deployment, confirm the canonical HTTPS page and `/api/profiles` both return HTTP 200. Create a presentation and inspect that the QR and signed request exclude `resultKey`.
+
+Confirm that switching profiles updates the privacy purpose and data categories, and that QR creation remains disabled until the notice is acknowledged.
 
 Report fixture tests, deployed endpoint checks, and real-wallet acceptance separately. A local pass or deployment does not establish that a real card in both target wallets can complete a cross-device presentation.
 

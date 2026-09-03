@@ -9,7 +9,7 @@
 
 這個專案同時服務兩種使用者：持卡人可直接跑一次真實出示流程；業者可一鍵部署獨立查驗站，或透過 API 接進既有服務。
 
-查驗頁預設顯示數位發展部「數位憑證皮夾」可用的選項；「有備而來」尚未公開上架，因此另放在需要主動展開的相容測試區。
+查驗頁預設使用數位發展部「數位憑證皮夾」；「有備而來」尚未公開上架，因此以次要選項直接切換。兩邊共用同一份目的清單，當前皮夾不支援的目的會保留並顯示為停用，不會因切換而改變版面位置。
 
 支援的持卡端：
 
@@ -149,6 +149,8 @@ npx wrangler deploy --dry-run
 弱點請依 [SECURITY.md](SECURITY.md) 私下回報，不要把真實 credential、QR、presentation 或個資貼到公開 issue。
 
 2026-09-03 的 Cloudflare/Workers 資安檢查、修正與剩餘風險見 [docs/security-audit-2026-09-03.md](docs/security-audit-2026-09-03.md)。
+
+建立 QR 前會顯示隨 requested claims 更新的個資蒐集、處理及利用告知，並要求使用者確認已閱讀。法規對照、資料類別 mapping、自行部署必改項目與零持久化限制見 [docs/privacy-compliance.md](docs/privacy-compliance.md)。這個模組協助落實告知與資料最少化，不構成法律意見或自動合規認證。
 
 ## 相關連結
 

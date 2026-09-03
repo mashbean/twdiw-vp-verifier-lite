@@ -69,6 +69,10 @@ const result = await new Promise((resolve, reject) => {
 - 自訂頁面仍應在掃碼前顯示要求欄位、發卡來源與判斷限制。
 - 更新既有部署時應保留 identity Durable Object namespace，否則會產生新的 verifier `did:key`。
 
+## 個資告知模組
+
+內嵌服務必須在顯示 QR 前呈現與本次 profile／claims 對應的告知事項，不可只把通用隱私政策連結藏在頁尾。可直接使用 `src/privacy-notice.ts` 的資料結構與 `privacyCategoriesForClaims()`；自行部署時須換成實際蒐集者、聯絡方式、特定目的、合法事由及利用範圍。完整工程與法規檢核見 [privacy-compliance.md](privacy-compliance.md)。
+
 ## 自訂情境
 
 驗證情境定義在 `src/profiles.ts`。每個 variant 指定 wallet family、credential source、必要 claims 與可選 credential type。調整情境前先從去識別化 schema 確認卡片真正存在的欄位；OIDC4VP 查詢要求任何不存在的必填欄位時，錢包會拒絕出示整張卡。
