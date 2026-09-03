@@ -1,7 +1,6 @@
-// Age verification — "are you an adult?" without the verifier learning more than
-// it needs. The driving-licence card can disclose only its `roc_birthday` field
-// (a Taiwan 民國 date) and nothing else — not name, not ID number, not address —
-// and the verifier turns that one field into a single yes/no answer.
+// Date parsing utilities for credentials that actually carry a birth-date claim.
+// The currently measured driving-licence card does not carry `roc_birthday`, so
+// the public adult profile does not request it from that card.
 //
 // Honest about the limit: the birthday itself is still revealed. A proof that
 // hides even the birthday needs the zero-knowledge layer (a range proof that
@@ -9,7 +8,7 @@
 
 /** Find a claim value by name anywhere in a (possibly nested) claims object.
  *  TWDIW nests disclosed claims under `vc.credentialSubject`, so a flat lookup
- *  would miss `roc_birthday`. */
+ *  would miss a requested selectively disclosed field. */
 export function findClaim(node: unknown, name: string): unknown {
   if (node && typeof node === "object") {
     if (!Array.isArray(node)) {

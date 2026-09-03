@@ -66,11 +66,11 @@ OIDC4VP 1.0 Final 的等價方向是 DCQL：
 
 ## 欄位不是結論
 
-- `roc_birthday` 可以計算成年，但查驗端也因此拿到生日。這是 selective disclosure，不是 zero knowledge。
+- 目前量測到的駕照電子卡沒有 `roc_birthday`，驗證器不再對它提出成年查驗。成年情境改用自發身分證的 `over18AtIssuance`。
 - `over18AtIssuance=true` 能持續證明現在已成年；`false` 只能表示發證當時尚未成立，不能永久標記為未成年。
 - `id_number` 表示 issuer 對該欄位簽章，不能在沒有政策依據時自動擴張成「目前具有中華民國國籍」。
 - 門號末五碼可以做取貨核對，不能單獨證明 SIM 即時 possession。
-- 駕照 `type` 只有在 issuer trust、credential type、有效期與撤銷狀態都通過後，才形成可用的駕駛資格判斷。
+- 駕照 `license_type` 只有在 issuer trust、credential type、有效期與撤銷狀態都通過後，才形成可用的駕駛資格判斷。
 
 ## Trust registry
 

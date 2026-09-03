@@ -34,17 +34,17 @@ Cloudflare 會依 `wrangler.jsonc` 自動建立 Durable Objects。部署完成�
 
 | 情境 | 最少欄位 | 可用卡片 | 判斷邊界 |
 |---|---|---|---|
-| 已滿 18 歲 | 政府卡 `roc_birthday`；自發證件 `over18AtIssuance` | 駕照、含生日的政府卡、自發身分證 | 政府卡會讓查驗端看到生日；自發證件只揭露發證時已成年述詞 |
+| 已滿 18 歲 | `over18AtIssuance` | 有備而來自發身分證 | 只揭露簽署的成年述詞；目前不向缺少生日欄位的政府駕照卡提出無法完成的要求 |
 | 核對姓名 | `name` | 政府卡、自發身分證 | 姓名相同不等於同一人，高風險流程仍要第二因素 |
 | 超商取貨 | `name` + `phonel5` | 已實測的三種電信卡型別 | 證明 issuer 簽署內容與 holder key 綁定，不等於 SIM 此刻仍由本人控制 |
-| 駕照資格 | `type` | `driverlicense` / `drivinglicense` 卡型 | 同時驗證憑證有效期與狀態；不要求姓名、統一編號、生日或管轄編號 |
+| 駕照資格 | `license_type` | `driverlicense` / `drivinglicense` 卡型 | 同時驗證憑證有效期與狀態；不要求姓名、統一編號、生日或管轄編號 |
 | 統一編號 | `id_number` / `unifiedNo` | 政府卡、自發身分證 | 會收到完整號碼，並檢查格式及檢查碼；不可直接推論當前國籍或戶籍 |
 | 國籍欄位 | `nationality` | 自發身分證 | 這是持卡人用自然人憑證簽署的 MyData 衍生欄位，不冒充政府機關直接出具的國籍證明 |
 
 固定入口可以用 query string 建立，例如：
 
 ```text
-https://your-worker.example/?profile=adult-18&source=government
+https://your-worker.example/?profile=adult-18&source=selfIssued
 https://your-worker.example/?profile=telecom-pickup&source=government
 ```
 
@@ -57,7 +57,7 @@ https://your-worker.example/?profile=telecom-pickup&source=government
 ```bash
 curl -X POST https://your-worker.example/api/presentations \
   -H 'content-type: application/json' \
-  --data '{"profileId":"adult-18","credentialSource":"government"}'
+  --data '{"profileId":"adult-18","credentialSource":"selfIssued"}'
 ```
 
 回應包含：

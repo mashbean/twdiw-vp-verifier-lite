@@ -1,4 +1,4 @@
-import { findClaim, isAtLeastAge, parseFlexibleBirthDate } from "./age";
+import { findClaim } from "./age";
 
 export type CredentialSource = "government" | "selfIssued";
 export type DecisionStatus = "pass" | "not-established";
@@ -36,14 +36,13 @@ export const VERIFICATION_PROFILES: VerificationProfile[] = [
     id: "adult-18",
     label: "確認已滿 18 歲",
     shortLabel: "成年",
-    description: "適合酒類、活動入場或分級服務。政府卡要求出生日期；有備而來自發證件只要求發證時已成年述詞。",
+    description: "適合酒類、活動入場或分級服務。目前使用有備而來自發身分證上的發證時已成年述詞。",
     resultQuestion: "這張卡能否證明持有人已滿 18 歲？",
     variants: [
-      { source: "government", sourceLabel: GOVERNMENT, claims: ["roc_birthday"] },
       { source: "selfIssued", sourceLabel: SELF_ISSUED, claims: ["over18AtIssuance"], credentialType: "NationalIDCredential" },
     ],
-    privacyNote: "政府卡目前仍會揭露出生日期；自發證件只揭露發證時已成年，不揭露生日。",
-    policyNote: "這是選擇性揭露與伺服器端判斷。政府卡路徑不是零知識證明。",
+    privacyNote: "只揭露發證時已滿 18 歲的布林述詞，不揭露出生日期。",
+    policyNote: "這是自發證件內的簽署述詞，不是零知識證明。持有人一旦成年，這個 true 述詞不會隨時間失效。",
   },
   {
     id: "identity-name",
@@ -77,7 +76,7 @@ export const VERIFICATION_PROFILES: VerificationProfile[] = [
     description: "要求駕照種類；簽章、持有人綁定、憑證效期與撤銷狀態由查驗器另外檢查。",
     resultQuestion: "這是否為可驗證且仍有效的駕照電子卡？",
     variants: [
-      { source: "government", sourceLabel: GOVERNMENT, claims: ["type"] },
+      { source: "government", sourceLabel: GOVERNMENT, claims: ["license_type"] },
     ],
     privacyNote: "不要求姓名、統一編號、生日、管轄編號或發證日期。",
     policyNote: "卡片種類須含 driverlicense 或 drivinglicense，並通過政府 issuer 信任檢查。",
@@ -135,7 +134,7 @@ export function claimLabel(name: string): string {
     roc_birthday: "出生日期（民國）",
     birthdate: "出生日期",
     over18AtIssuance: "發證時已滿 18 歲",
-    type: "駕照種類",
+    license_type: "駕照種類",
     id_number: "國民身分證統一編號",
     unifiedNo: "國民身分證統一編號",
     nationality: "國籍",
@@ -219,17 +218,10 @@ export function evaluateProfile(
 
   switch (profileId) {
     case "adult-18": {
-      if (source === "selfIssued") {
-        const adult = String(claims.over18AtIssuance).toLowerCase() === "true";
-        return adult
-          ? { status: "pass", title: "已證明發證時滿 18 歲", detail: "此述詞已包含在自然人憑證簽署的自發證件中。" }
-          : { status: "not-established", title: "未能證明已滿 18 歲", detail: "述詞不是 true；這個結果不應解讀為目前仍未成年。" };
-      }
-      const birth = parseFlexibleBirthDate(claims.roc_birthday);
-      const adult = birth ? isAtLeastAge(birth, 18, nowMs) : false;
+      const adult = String(claims.over18AtIssuance).toLowerCase() === "true";
       return adult
-        ? { status: "pass", title: "已滿 18 歲", detail: "由卡片揭露的出生日期依查驗當日計算。" }
-        : { status: "not-established", title: "未能證明已滿 18 歲", detail: birth ? "依查驗當日計算尚未滿 18 歲。" : "出生日期格式無法判讀。" };
+        ? { status: "pass", title: "已證明發證時滿 18 歲", detail: "此述詞已包含在自然人憑證簽署的自發證件中。" }
+        : { status: "not-established", title: "未能證明已滿 18 歲", detail: "述詞不是 true；這個結果不應解讀為目前仍未成年。" };
     }
     case "identity-name":
       return { status: "pass", title: "姓名欄位簽章有效", detail: "卡片簽章、持有人綁定與揭露承諾均已通過。" };
@@ -251,7 +243,7 @@ export function evaluateProfile(
       const type = resolvedCredentialType(claims, verifiedType)?.toLowerCase() ?? "";
       const known = ["driverlicense", "drivinglicense"].some((part) => type.includes(part));
       return known
-        ? { status: "pass", title: "駕照電子卡驗證通過", detail: `卡片揭露的駕照種類為「${String(claims.type)}」。` }
+        ? { status: "pass", title: "駕照電子卡驗證通過", detail: `卡片揭露的駕照種類為「${String(claims.license_type)}」。` }
         : { status: "not-established", title: "卡片種類不符", detail: "欄位存在，但憑證類型不是已辨識的駕照電子卡。" };
     }
     case "national-id-number": {

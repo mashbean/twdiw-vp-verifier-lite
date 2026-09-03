@@ -10,6 +10,7 @@ describe("verification profiles", () => {
 
   it("uses the signed self-issued age predicate instead of disclosing birthdate", () => {
     const profile = getProfile("adult-18")!;
+    expect(getVariant(profile, "government")).toBeUndefined();
     expect(getVariant(profile, "selfIssued")?.claims).toEqual(["over18AtIssuance"]);
     expect(evaluateProfile("adult-18", "selfIssued", { over18AtIssuance: "true" }, "NationalIDCredential").status).toBe("pass");
   });
@@ -31,9 +32,11 @@ describe("verification profiles", () => {
   });
 
   it("requires a recognised driving-licence credential type", () => {
-    expect(evaluateProfile("driving-entitlement", "government", { type: "普通小型車" }, "2-16-886-101_driverlicense_car", "valid").status).toBe("pass");
-    expect(evaluateProfile("driving-entitlement", "government", { type: "普通小型車" }, "student_card", "valid").status).toBe("not-established");
-    expect(evaluateProfile("driving-entitlement", "government", { type: "普通小型車" }, "2-16-886-101_driverlicense_car", "unknown").title).toMatch(/無法確認/);
+    const profile = getProfile("driving-entitlement")!;
+    expect(getVariant(profile, "government")?.claims).toEqual(["license_type"]);
+    expect(evaluateProfile("driving-entitlement", "government", { license_type: "普通小型車" }, "2-16-886-101_driverlicense_car", "valid").status).toBe("pass");
+    expect(evaluateProfile("driving-entitlement", "government", { license_type: "普通小型車" }, "student_card", "valid").status).toBe("not-established");
+    expect(evaluateProfile("driving-entitlement", "government", { license_type: "普通小型車" }, "2-16-886-101_driverlicense_car", "unknown").title).toMatch(/無法確認/);
   });
 
   it("returns only the fields the verifier requested", () => {
