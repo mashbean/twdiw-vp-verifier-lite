@@ -105,9 +105,9 @@ Durable Object 只暫存 nonce、state、結果 capability、驗證情境與要�
 
 `/zkp` 讓「有備而來」皮夾建立零知識**年齡述詞證明**：皮夾證明「出生日期不晚於截止日」（即已滿 N 歲），查驗端只得到是或否，不會收到出生日期或任何欄位。來源可以是政府 TWDIW 卡片（issuer 另查官方 DID API），或有備而來自發的 MyData 國民身分證（結果標示為自發、非政府背書）。頁面同時把耗時與 SD-JWT-VC 出示流程並排比較。官方數位憑證皮夾不支援這個流程。
 
-流程：頁面建立 session 並顯示請求 QR（compact JSON，含一次性 nonce、截止日、門檻、回應 URL；5 分鐘後失效並自動更新）→ 皮夾在手機上建立 Prepare 與 Show 兩個證明（數十秒）→ `POST /api/zkp/response/:id` → Worker 比對述詞、解析 issuer `did:key`、查政府 issuer 信任，再把證明轉送原生後端驗證 → 結果經一次性 WebSocket 回到頁面，session metadata 立即刪除。
+流程：頁面建立 session 並顯示請求 QR（compact JSON，含一次性 nonce、截止日、門檻、回應 URL；5 分鐘後失效並自動更新）→ 皮夾在手機上建立 Prepare 與 Show 兩個證明（首次約 8 到 12 秒，之後重用 Prepare 預運算約 3 秒）→ `POST /api/zkp/response/:id` → Worker 比對述詞、解析 issuer `did:key`、查政府 issuer 信任，再把證明轉送原生後端驗證 → 結果經一次性 WebSocket 回到頁面，session metadata 立即刪除。
 
-原生後端在 `native/openac-age-verifier`（Rust axum 服務），因為 Prepare 電路的 verifying key 有 432 MB，Worker 放不下；它的金鑰釘在 bonds-tw/backupTW-iOS 的 `openac-age-v1` release。Worker 只轉送證明，不保存也不記錄；後端只回覆是非與耗時。
+原生後端在 `native/openac-age-verifier`（Rust axum 服務），因為 Prepare 電路的 verifying key 有 432 MB，Worker 放不下；示範站以 Cloudflare Container（`basic`，1/4 vCPU）執行它，證明不離開 Cloudflare；它的金鑰釘在 bonds-tw/backupTW-iOS 的 `openac-age-v1` release。Worker 只轉送證明，不保存也不記錄；後端只回覆是非與耗時。
 
 API：
 

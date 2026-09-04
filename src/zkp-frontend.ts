@@ -45,11 +45,11 @@ export const ZKP_HTML = /* html */ `<!doctype html>
       <div class="experiment-mark" aria-hidden="true">實驗</div>
       <div>
         <h2 id="zkp-notice-title">實驗性功能</h2>
-        <p>需要「有備而來」App 的零知識證明版本，並非數位發展部官方「數位憑證皮夾」支援的流程。證明在手機上建立需要數十秒；驗證由獨立的原生後端（<code>openac-age-verifier</code>）執行，因為 Prepare 電路的 verifying key 有 432 MB，Cloudflare Worker 放不下。本站只轉送證明並回報是非與耗時。</p>
+        <p>需要「有備而來」App 的零知識證明版本，並非數位發展部官方「數位憑證皮夾」支援的流程。手機第一次為一張卡建立證明約 8 到 12 秒；之後同一張卡重用 Prepare 的預運算，約 3 秒。驗證需要 Prepare 電路 432 MB 的 verifying key，超出 Cloudflare Worker 的 128 MiB，因此由原生服務 <code>openac-age-verifier</code> 執行；它現在以 Cloudflare Container 跑在 Worker 旁邊，證明不會離開 Cloudflare。</p>
       </div>
     </aside>
 
-    <aside id="backend-notice" class="backend-notice hidden" role="status">ZKP 驗證後端尚未設定（<code>ZKP_VERIFIER_URL</code> 為空）。這個部署目前無法建立零知識證明查驗請求；首頁的 SD-JWT-VC 出示流程不受影響。</aside>
+    <aside id="backend-notice" class="backend-notice hidden" role="status">ZKP 驗證後端尚未設定：這個部署沒有宣告驗證容器，也沒有設定 <code>ZKP_VERIFIER_URL</code>。目前無法建立零知識證明查驗請求；首頁的 SD-JWT-VC 出示流程不受影響。</aside>
 
     <section id="zkp-try" class="try-section" aria-labelledby="zkp-try-title">
       <div class="intro-heading">
@@ -111,7 +111,7 @@ export const ZKP_HTML = /* html */ `<!doctype html>
       </div>
       <div class="qr-shell"><div id="qr" class="qr" aria-label="零知識證明查驗請求 QR Code"></div></div>
       <p id="presentation-statement" class="deep-link-note"></p>
-      <p id="waiting" class="waiting"><span aria-hidden="true"></span>等待皮夾建立證明（手機上需要數十秒）</p>
+      <p id="waiting" class="waiting"><span aria-hidden="true"></span>等待皮夾建立證明（手機上約 3 到 12 秒）</p>
       <div class="presentation-actions">
         <button id="renew" class="text-button" type="button">建立新的請求</button>
         <button id="cancel" class="text-button" type="button">取消這次查驗</button>
@@ -131,7 +131,7 @@ export const ZKP_HTML = /* html */ `<!doctype html>
     <section class="trust-strip" aria-label="驗證範圍">
       <div><strong>查驗的證據</strong><span>nonce 綁定、述詞 public input、Prepare／Show 證明連結、issuer 金鑰（政府卡另查官方 DID API）</span></div>
       <div><strong>資料保存</strong><span>證明只在單次請求記憶體中轉送給原生後端；Worker 與 Durable Object 不保存證明，也不記錄持卡人資料</span></div>
-      <div><strong>後端邊界</strong><span>原生後端只收到證明與述詞，不收到任何欄位；它只記錄是非、耗時與 nonce 的雜湊前綴</span></div>
+      <div><strong>後端邊界</strong><span>原生後端以 Cloudflare Container 執行，只收到證明與述詞，不收到任何欄位；它只記錄是非、耗時與 nonce 的雜湊前綴</span></div>
     </section>
 
     <section class="faq" aria-labelledby="zkp-faq-title">
@@ -149,8 +149,12 @@ export const ZKP_HTML = /* html */ `<!doctype html>
           <p>不算。MyData 自發身分證由持卡人以自然人憑證派生的每卡金鑰簽署，證明只說明「持卡人自己簽署的出生日期」符合述詞。結果頁會標示為自發、非政府背書。</p>
         </details>
         <details>
-          <summary>為什麼要數十秒，而且還需要另一個後端？</summary>
-          <p>手機要為 ES256 簽章與日期比較各建一個證明並互相連結。驗證端需要 Prepare 電路 432 MB 的 verifying key，超出 Cloudflare Worker 的限制，因此由獨立的 Rust 原生服務載入金鑰驗證，Worker 只轉送與計時。</p>
+          <summary>為什麼要等幾秒，而且還需要另一個後端？</summary>
+          <p>手機要為 ES256 簽章與日期比較各建一個證明並互相連結。第一次約 8 到 12 秒；之後同一張卡重用 Prepare 的預運算，只重新遮罩再跑較便宜的 Show 電路，約 3 秒。驗證端需要 Prepare 電路 432 MB 的 verifying key，超出 Cloudflare Worker 的 128 MiB 限制，因此由 Rust 原生服務載入金鑰驗證。這個服務以 Cloudflare Container 執行，目前規格 1/4 vCPU，實測驗證約 5 秒，容器剛從休眠喚醒時較久。</p>
+        </details>
+        <details>
+          <summary>重用 Prepare 預運算，會讓兩次出示被關聯嗎？</summary>
+          <p>不會。每次出示都重新產生隨機遮罩並重新遮罩兩個證明，查驗方收到的證明物件因此互不相同。被重用的是手機端的機密中間狀態，不是送出去的證明。那份中間狀態含裝置金鑰與出生日期，以憑證同等的保護存在手機上，刪卡或清除本機資料時一併移除。</p>
         </details>
         <details>
           <summary>驗證方會拿到什麼？</summary>

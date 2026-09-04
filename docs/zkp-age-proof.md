@@ -2,7 +2,7 @@
 
 `/zkp` 讓測試者用「有備而來」（Bonds）iOS 皮夾建立一個零知識**年齡述詞證明**，由本 Worker 查驗，並把耗時與既有的 SD-JWT-VC OIDC4VP 出示流程並排比較。皮夾證明「隱藏的出生日期不晚於截止日」（即已滿 N 歲），查驗端只知道是或否，不會收到出生日期或任何卡片欄位。
 
-這是實驗性功能：官方「數位憑證皮夾」不支援；證明在手機端建立需要數十秒；驗證需要 Prepare 電路 432 MB 的 verifying key，Cloudflare Worker 放不下，因此由獨立的原生服務執行。
+這是實驗性功能：官方「數位憑證皮夾」不支援；證明在手機端建立首次約 8 到 12 秒、之後重用 Prepare 預運算約 3 秒；驗證需要 Prepare 電路 432 MB 的 verifying key，Cloudflare Worker 放不下，因此由原生服務執行，示範站以 Cloudflare Container 跑它。
 
 ## 架構
 
@@ -10,7 +10,7 @@
 有備而來 App ──掃描 QR（請求 JSON）──▶ 瀏覽器 /zkp 頁
       │                                    │ POST /api/zkp/sessions
       │                                    │ WebSocket /api/zkp/events/:id（resultKey）
-      │ 建立 Prepare + Show 證明（數十秒）      │
+      │ 建立 Prepare + Show 證明（3 到 12 秒）  │
       ▼                                    ▼
 POST /api/zkp/response/:id ──▶ Worker（ZkpSession Durable Object）
                                    │ 比對述詞 metadata、解析 issuer did:key
@@ -108,10 +108,10 @@ Durable Object class：`ZkpSession`（binding `ZKP_SESSIONS`，migration `v3`）
 | backend | 什麼情況 | 用途 |
 |---|---|---|
 | `container` | 部署宣告了容器（`wrangler.mashbean.jsonc`） | 正式路徑，全部留在 Cloudflare |
-| `external` | 設了 `ZKP_VERIFIER_URL` secret | 開發用，指向筆電上的服務 |
+| `external` | 設了 `ZKP_VERIFIER_URL` secret | 除錯用，指向另一台機器上的服務；示範站已改用容器，這個 secret 已移除 |
 | `none` | 兩者皆無 | `/zkp` 只顯示說明，不能建立請求 |
 
-兩者同時存在時 `external` 優先。那是除錯順序：隧道是刻意、暫時設定的，設著的時候就該用它，否則量到的是另一台機器。
+兩者同時存在時 `external` 優先。那是除錯順序：外部網址是刻意、暫時設定的，設著的時候就該用它，否則量到的是另一台機器。
 
 ### 容器
 
