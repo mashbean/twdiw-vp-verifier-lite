@@ -30,11 +30,12 @@
       "class_name": "ZkpVerifierContainer",
       "image": "./native/openac-age-verifier/Dockerfile",
       "image_build_context": "./native/openac-age-verifier",
-      // 4 GiB. The service holds 429 MB once its keys are loaded; the peak
-      // during verification has not been measured yet, so this leaves room.
-      // Drop to "basic" (1 GiB) once a real proof has been checked and the
-      // peak is known.
-      "instance_type": "standard-1",
+      // basic = 1/4 vCPU, 1 GiB. A real verification measured 625 MB resident
+      // (429 MB of loaded key + ~190 MB working set), and the service caps
+      // concurrent verifications at 2 (429 + 2*190 ~= 810 MB), so 1 GiB holds.
+      // basic's free allowance is also 25 GiB-hours/month — about 25 hours of
+      // wakefulness against standard-1's ~6, which matters on the $5 plan.
+      "instance_type": "basic",
       // A ceiling on cost as much as on load: each awake instance bills its
       // provisioned memory for as long as it stays awake.
       "max_instances": 2

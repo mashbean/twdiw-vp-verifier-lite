@@ -74,6 +74,14 @@ struct AppState {
     keys: Arc<Keys>,
     token: Option<String>,
     started_at: Instant,
+    // Bounds how many proofs verify at once, and therefore peak memory. One
+    // verification measured at 625 MB resident (429 MB of loaded key plus about
+    // 190 MB of working set); the default of 2 keeps a `basic` container's 1 GiB
+    // safe (429 + 2 * 190 ~= 810 MB) while a larger instance can raise it with
+    // OPENAC_AGE_MAX_CONCURRENT_VERIFICATIONS. A 1/4-vCPU instance cannot
+    // meaningfully parallelise Spartan verification anyway, so this queues
+    // rather than starves.
+    verify_permits: Arc<tokio::sync::Semaphore>,
 }
 
 #[derive(Deserialize)]
@@ -326,6 +334,10 @@ async fn verify(
     let keys = state.keys.clone();
     let prepare_len = prepare_proof.len();
     let show_len = show_proof.len();
+    // Held across the whole verification so the memory bound is real; dropped
+    // when `_permit` leaves scope. `acquire_owned` cannot fail here — the
+    // semaphore is never closed.
+    let _permit = state.verify_permits.clone().acquire_owned().await.expect("verify semaphore is open");
     let outcome = tokio::task::spawn_blocking(move || {
         verify_package(&keys, &prepare_proof, &show_proof, &expected_prepare, &expected_show)
     })
@@ -444,7 +456,18 @@ async fn main() {
             std::process::exit(65);
         }
     };
-    let state = Arc::new(AppState { keys, token, started_at: Instant::now() });
+    let max_concurrent = std::env::var("OPENAC_AGE_MAX_CONCURRENT_VERIFICATIONS")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| *value >= 1)
+        .unwrap_or(2);
+    info!(max_concurrent, "verification concurrency limit");
+    let state = Arc::new(AppState {
+        keys,
+        token,
+        started_at: Instant::now(),
+        verify_permits: Arc::new(tokio::sync::Semaphore::new(max_concurrent)),
+    });
     let app = Router::new()
         .route("/healthz", get(healthz))
         .route(

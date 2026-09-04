@@ -116,7 +116,7 @@ Durable Object class：`ZkpSession`（binding `ZKP_SESSIONS`，migration `v3`）
 ### 容器
 
 - 宣告在 `wrangler.mashbean.jsonc`，不在 `wrangler.jsonc`。Containers 需要 Workers Paid，示範站付費、開源一鍵部署留在免費方案。
-- `standard-1`（1/2 vCPU、4 GiB 記憶體、8 GB 磁碟）。服務載完金鑰常駐 429 MB，驗證當下的峰值尚未量測，所以先留餘裕；量到之後可以降到 `basic`（1 GiB）。
+- `basic`（1/4 vCPU、1 GiB 記憶體、4 GB 磁碟）。實測一次真證明驗證峰值 625 MB（載完金鑰常駐 429 MB＋約 190 MB 工作集）；服務把同時驗證數限在 2（429＋2×190≈810 MB），所以 1 GiB 裝得下。basic 每月免費醒著時間約 25 小時，是 standard-1 的四倍。並發上限可用 `OPENAC_AGE_MAX_CONCURRENT_VERIFICATIONS` 調整。
 - `sleepAfter` 預設 10 分鐘。記憶體與磁碟只在醒著時計費，睡著不計。4 GiB 下，Workers Paid 每月含的 25 GiB-hours 約等於六小時的醒著時間。
 - 建立 session 時就先喚醒容器（`warmZkpContainer`）。手機接下來要花約 20 秒產證明，比冷啟動久，所以這段開機是免費的。
 - `enableInternet = false`：金鑰烤進映像，服務不對外抓任何東西。
