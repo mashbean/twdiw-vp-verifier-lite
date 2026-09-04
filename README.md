@@ -101,6 +101,23 @@ Durable Object 只暫存 nonce、state、結果 capability、驗證情境與要�
 - MOICA G3 憑證鏈與自然人憑證 RSA-2048/SHA-256 簽章
 - disclosure commitment 與憑證有效期
 
+## 零知識證明年齡查驗（/zkp，實驗）
+
+`/zkp` 讓「有備而來」皮夾建立零知識**年齡述詞證明**：皮夾證明「出生日期不晚於截止日」（即已滿 N 歲），查驗端只得到是或否，不會收到出生日期或任何欄位。來源可以是政府 TWDIW 卡片（issuer 另查官方 DID API），或有備而來自發的 MyData 國民身分證（結果標示為自發、非政府背書）。頁面同時把耗時與 SD-JWT-VC 出示流程並排比較。官方數位憑證皮夾不支援這個流程。
+
+流程：頁面建立 session 並顯示請求 QR（compact JSON，含一次性 nonce、截止日、門檻、回應 URL；5 分鐘後失效並自動更新）→ 皮夾在手機上建立 Prepare 與 Show 兩個證明（數十秒）→ `POST /api/zkp/response/:id` → Worker 比對述詞、解析 issuer `did:key`、查政府 issuer 信任，再把證明轉送原生後端驗證 → 結果經一次性 WebSocket 回到頁面，session metadata 立即刪除。
+
+原生後端在 `native/openac-age-verifier`（Rust axum 服務），因為 Prepare 電路的 verifying key 有 432 MB，Worker 放不下；它的金鑰釘在 bonds-tw/backupTW-iOS 的 `openac-age-v1` release。Worker 只轉送證明，不保存也不記錄；後端只回覆是非與耗時。
+
+API：
+
+- `GET /api/zkp/config`：`configured`、請求存活時間、預設門檻與目的、來源與欄位標籤、個資告知。
+- `POST /api/zkp/sessions`：`{"credentialSource":"government"|"selfIssued","minimumAge":18,"purpose":"…"}` → `id`、`resultKey`、`eventsUrl`、`request`（QR 內容）、`qrSvg`、`cutoffDate`、`expiresAt`、`lifetimeMs`。後端未設定時回 503。
+- `GET /api/zkp/events/:id`：與 `/api/events/:id` 相同的一次性訂閱協定。
+- `POST /api/zkp/response/:id`：皮夾回傳 `AgePredicateProofPackage`；200 通過、400 失敗、404 session 已不存在、502 後端無法連線。
+
+設定 `ZKP_VERIFIER_URL`（var，兩個 wrangler 設定檔預設空白）與 `ZKP_VERIFIER_TOKEN`（secret，`wrangler secret put`）後功能才會啟用；空白時 `/zkp` 只顯示說明。Wire contract、驗證順序、隱私邊界與耗時欄位的完整說明見 [docs/zkp-age-proof.md](docs/zkp-age-proof.md)。
+
 ## OIDC4VP 相容範圍
 
 OIDC4VP 1.0 Final 以 DCQL 表達 credential query。台灣現行 TWDIW 實作與兩套目標皮夾仍以 DIF Presentation Exchange 為主要請求格式，回應也是 `jwt_vp` 外層包住 TWDIW SD-JWT credential。
@@ -141,6 +158,8 @@ npx wrangler deploy --dry-run
 |---|---|---|
 | `VERIFIER_ORIGIN` | 空白 | request/response 的公開 HTTPS origin；空白時取目前 origin |
 | `OFFICIAL_TRUST_REGISTRY_URL` | `https://frontend.wallet.gov.tw/api/did` | 以 `/{issuerDid}` 查詢的官方 DID API base URL；查不到時拒絕 |
+| `ZKP_VERIFIER_URL` | 空白 | 零知識年齡證明原生後端（`native/openac-age-verifier`）的 base URL；空白時 `/zkp` 停用建立請求 |
+| `ZKP_VERIFIER_TOKEN` | （secret） | 呼叫原生後端 `/verify` 的 bearer token，以 `wrangler secret put ZKP_VERIFIER_TOKEN` 設定，不寫進設定檔 |
 
 ## 安全與隱私限制
 
@@ -151,6 +170,7 @@ npx wrangler deploy --dry-run
 - credential 內指定的遠端狀態文件只允許公共 HTTPS hostname，拒絕 credentials、literal IP、localhost、redirect、逾時與過大回應，降低 SSRF 與資源耗盡風險。
 - verifier identity 是單一部署的持久識別。更換 Durable Object namespace 會產生新的 `did:key`，既有整合需重新信任。
 - 自發證件格式 `vc+moica` 是「有備而來」的明示 extension，不宣稱為標準 SD-JWT VC。
+- `/zkp` 的證明封包上限 6,000,000 字元、每個證明 2,000,000 bytes；證明與 issuer DID 只在單次請求記憶體中轉送給原生後端，不寫入 Durable Object，未完成 session 6 分鐘後刪除。原生後端只記錄是非、耗時與 nonce 雜湊前綴。
 
 弱點請依 [SECURITY.md](SECURITY.md) 私下回報，不要把真實 credential、QR、presentation 或個資貼到公開 issue。
 

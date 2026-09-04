@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FRONTEND_HTML, FRONTEND_JS } from "../src/frontend";
+import { ZKP_CSS, ZKP_HTML, ZKP_JS } from "../src/zkp-frontend";
 
 describe("landing page", () => {
   it("presents the citizen and service-provider paths", () => {
@@ -78,5 +79,59 @@ describe("landing page", () => {
     expect(FRONTEND_HTML).not.toContain("在同一台裝置開啟皮夾");
     expect(FRONTEND_JS).toContain("官方數位憑證皮夾的專用入口");
     expect(FRONTEND_JS).toContain("有備而來請從 App 內掃描上方 QR Code");
+  });
+});
+
+describe("landing page → zero-knowledge test page", () => {
+  it("links the /zkp page and records only timing numbers for the comparison", () => {
+    expect(FRONTEND_HTML).toContain('href="/zkp"');
+    expect(FRONTEND_HTML).toContain("零知識證明測試");
+    expect(FRONTEND_JS).toContain("bonds-verifier-timings");
+    expect(FRONTEND_JS).toContain("flow:'sd-jwt-vc'");
+    expect(FRONTEND_JS).not.toMatch(/recordTiming\(\{[^}]*claims/);
+  });
+});
+
+describe("zero-knowledge age proof page", () => {
+  it("loads its own script and stylesheet on top of the shared ones", () => {
+    expect(ZKP_HTML).toContain('<link rel="stylesheet" href="/app.css">');
+    expect(ZKP_HTML).toContain('<link rel="stylesheet" href="/zkp.css">');
+    expect(ZKP_HTML).toContain('<script src="/zkp.js" defer></script>');
+    expect(ZKP_CSS).toContain(".timing-table");
+  });
+
+  it("keeps the element ids the script drives", () => {
+    for (const id of [
+      "source-government", "source-selfIssued", "minimum-age", "purpose", "statement-cutoff", "privacy-ack", "create",
+      "create-error", "presentation", "qr", "countdown", "renew", "cancel", "result", "compare-body", "clear-compare", "backend-notice",
+    ]) {
+      expect(ZKP_HTML).toContain(`id="${id}"`);
+    }
+  });
+
+  it("explains the experimental boundary and the self-asserted source", () => {
+    expect(ZKP_HTML).toContain("有備而來");
+    expect(ZKP_HTML).toContain("432 MB");
+    expect(ZKP_HTML).toContain("並非數位發展部官方「數位憑證皮夾」支援的流程");
+    expect(ZKP_HTML).toContain("自發、非政府背書");
+    expect(ZKP_HTML).toContain("只收到證明與是非結果");
+    expect(ZKP_JS).toContain("不收到出生日期或任何欄位");
+  });
+
+  it("receives one-time results, renews on expiry and clears the comparison record", () => {
+    expect(ZKP_JS).toContain("new WebSocket(url)");
+    expect(ZKP_JS).not.toContain("/api/result/");
+    expect(ZKP_JS).not.toContain("setInterval");
+    expect(ZKP_JS).toContain("renew(true)");
+    expect(ZKP_JS).toContain("bonds-verifier-timings");
+    expect(ZKP_JS).toContain("flow:'zkp'");
+    expect(ZKP_JS).toContain("sessionStorage.removeItem(TIMINGS_KEY)");
+    expect(ZKP_JS).toContain("setTimeout(clearResult,120000)");
+    expect(ZKP_JS).toContain("window.addEventListener('pagehide'");
+  });
+
+  it("disables creation when the native backend is not configured", () => {
+    expect(ZKP_JS).toContain("!configured");
+    expect(ZKP_HTML).toContain("ZKP_VERIFIER_URL");
   });
 });

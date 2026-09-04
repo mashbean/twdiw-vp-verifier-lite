@@ -4,11 +4,34 @@ import { VerifierIdentity } from "./identity";
 import { FRONTEND_CSS, FRONTEND_HTML, FRONTEND_JS } from "./frontend";
 import { getProfile, getVariant, publicProfiles, type CredentialSource, type WalletFamily } from "./profiles";
 import { PRIVACY_NOTICE, privacyCategoriesForClaims } from "./privacy-notice";
+import { ZkpSession } from "./zkp";
+import { ZKP_CSS, ZKP_HTML, ZKP_JS } from "./zkp-frontend";
+import {
+  CLAIM_LABELS,
+  DEFAULT_MINIMUM_AGE,
+  DEFAULT_PURPOSE,
+  isZkpCredentialSource,
+  MAX_MINIMUM_AGE,
+  MAX_PACKAGE_CHARS,
+  MAX_PURPOSE_CHARS,
+  MIN_MINIMUM_AGE,
+  parseMinimumAge,
+  REQUEST_GRACE_MS,
+  REQUEST_LIFETIME_MS,
+  sanitizePurpose,
+  SOURCE_LABELS,
+} from "./zkp-statement";
 
-export { PresentationSession, VerifierIdentity };
+export { PresentationSession, VerifierIdentity, ZkpSession };
+
+// The ZKP request carries a zh-Hant purpose. The library's default encoder keeps
+// only the low byte of each UTF-16 code unit, so opt into UTF-8 — a no-op for
+// the ASCII deep links the OIDC4VP QR carries.
+qrcode.stringToBytes = qrcode.stringToBytesFuncs["UTF-8"];
 
 const MAX_CREATE_BODY = 8_192;
 const MAX_PRESENTATION_BODY = 512_000;
+const MAX_ZKP_BODY = MAX_PACKAGE_CHARS;
 
 function publicOrigin(request: Request, env: Env): string {
   const configured = env.VERIFIER_ORIGIN?.trim();
@@ -58,6 +81,11 @@ function validSessionId(value: string): boolean {
   return /^[0-9a-f-]{36}$/.test(value);
 }
 
+/** The native age-proof verifier is optional; without it the /zkp page only explains itself. */
+function zkpConfigured(env: Env): boolean {
+  return Boolean(env.ZKP_VERIFIER_URL?.trim());
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -68,6 +96,9 @@ export default {
     }
     if (request.method === "GET" && path === "/app.css") return staticAsset(request, FRONTEND_CSS, "text/css");
     if (request.method === "GET" && path === "/app.js") return staticAsset(request, FRONTEND_JS, "text/javascript");
+    if (request.method === "GET" && path === "/zkp") return staticAsset(request, ZKP_HTML, "text/html");
+    if (request.method === "GET" && path === "/zkp.css") return staticAsset(request, ZKP_CSS, "text/css");
+    if (request.method === "GET" && path === "/zkp.js") return staticAsset(request, ZKP_JS, "text/javascript");
 
     if (request.method === "GET" && path === "/api/profiles") {
       const profiles = publicProfiles();
@@ -158,6 +189,87 @@ export default {
         return respond(request, "expected websocket", { status: 426, headers: { "cache-control": "no-store" } });
       }
       return env.SESSIONS.getByName(eventsMatch[1]).fetch(request);
+    }
+
+    if (request.method === "GET" && path === "/api/zkp/config") {
+      return json(request, {
+        configured: zkpConfigured(env),
+        requestLifetimeMs: REQUEST_LIFETIME_MS,
+        sessionGraceMs: REQUEST_GRACE_MS,
+        defaultMinimumAge: DEFAULT_MINIMUM_AGE,
+        minimumAgeRange: [MIN_MINIMUM_AGE, MAX_MINIMUM_AGE],
+        defaultPurpose: DEFAULT_PURPOSE,
+        maxPurposeChars: MAX_PURPOSE_CHARS,
+        sourceLabels: SOURCE_LABELS,
+        claimLabels: CLAIM_LABELS,
+        privacyNotice: PRIVACY_NOTICE,
+      });
+    }
+
+    if (request.method === "POST" && path === "/api/zkp/sessions") {
+      if (!zkpConfigured(env)) return json(request, { error: "zkp verifier backend is not configured" }, { status: 503 });
+      const declaredLength = Number(request.headers.get("content-length") ?? 0);
+      if (declaredLength > MAX_CREATE_BODY) return json(request, { error: "request body is too large" }, { status: 413 });
+      const raw = await request.text();
+      if (raw.length > MAX_CREATE_BODY) return json(request, { error: "request body is too large" }, { status: 413 });
+      let body: { credentialSource?: unknown; minimumAge?: unknown; purpose?: unknown };
+      try { body = raw ? JSON.parse(raw) as typeof body : {}; }
+      catch { return json(request, { error: "request body must be JSON" }, { status: 400 }); }
+      const source = body.credentialSource;
+      if (!isZkpCredentialSource(source)) return json(request, { error: "unsupported credential source" }, { status: 400 });
+      const minimumAge = parseMinimumAge(body.minimumAge);
+      if (minimumAge === null) return json(request, { error: `minimumAge must be an integer between ${MIN_MINIMUM_AGE} and ${MAX_MINIMUM_AGE}` }, { status: 400 });
+      const purpose = sanitizePurpose(body.purpose);
+      if (purpose === null) return json(request, { error: `purpose must be 1 to ${MAX_PURPOSE_CHARS} characters without control characters` }, { status: 400 });
+
+      const id = crypto.randomUUID();
+      const resultKey = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
+      const origin = publicOrigin(request, env);
+      const responseUrl = `${origin}/api/zkp/response/${id}`;
+      const created = await env.ZKP_SESSIONS.getByName(id).init({
+        resultKey,
+        credentialSource: source,
+        minimumAge,
+        purpose,
+        responseUrl,
+      });
+      const eventsUrl = `${origin.replace(/^http/, "ws")}/api/zkp/events/${id}`;
+      return json(request, {
+        id,
+        resultKey,
+        eventsUrl,
+        request: created.request,
+        qrSvg: qrSvg(created.request),
+        responseUrl,
+        cutoffDate: created.cutoffDate,
+        minimumAge: created.minimumAge,
+        credentialSource: created.credentialSource,
+        purpose: created.purpose,
+        expiresAt: created.expiresAt,
+        lifetimeMs: created.lifetimeMs,
+      });
+    }
+
+    const zkpResponseMatch = path.match(/^\/api\/zkp\/response\/([0-9a-f-]{36})$/);
+    if (request.method === "POST" && zkpResponseMatch && validSessionId(zkpResponseMatch[1])) {
+      const contentType = request.headers.get("content-type");
+      if (contentType && !contentType.toLowerCase().startsWith("application/json")) {
+        return json(request, { status: "failed", reason: "content type must be application/json" }, { status: 415 });
+      }
+      const declaredLength = Number(request.headers.get("content-length") ?? 0);
+      if (declaredLength > MAX_ZKP_BODY) return json(request, { status: "failed", reason: "proof package is too large" }, { status: 413 });
+      const body = await request.text();
+      if (body.length > MAX_ZKP_BODY) return json(request, { status: "failed", reason: "proof package is too large" }, { status: 413 });
+      const outcome = await env.ZKP_SESSIONS.getByName(zkpResponseMatch[1]).submit(body);
+      return json(request, outcome.body, { status: outcome.httpStatus });
+    }
+
+    const zkpEventsMatch = path.match(/^\/api\/zkp\/events\/([0-9a-f-]{36})$/);
+    if (request.method === "GET" && zkpEventsMatch && validSessionId(zkpEventsMatch[1])) {
+      if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
+        return respond(request, "expected websocket", { status: 426, headers: { "cache-control": "no-store" } });
+      }
+      return env.ZKP_SESSIONS.getByName(zkpEventsMatch[1]).fetch(request);
     }
 
     return respond(request, "not found", { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } });

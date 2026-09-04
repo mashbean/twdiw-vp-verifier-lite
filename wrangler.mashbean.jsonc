@@ -15,15 +15,18 @@
   "durable_objects": {
     "bindings": [
       { "name": "SESSIONS", "class_name": "PresentationSession" },
-      { "name": "IDENTITY", "class_name": "VerifierIdentity" }
+      { "name": "IDENTITY", "class_name": "VerifierIdentity" },
+      { "name": "ZKP_SESSIONS", "class_name": "ZkpSession" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["PresentationSession"] },
-    { "tag": "v2", "new_sqlite_classes": ["VerifierIdentity"] }
+    { "tag": "v2", "new_sqlite_classes": ["VerifierIdentity"] },
+    { "tag": "v3", "new_sqlite_classes": ["ZkpSession"] }
   ],
   "vars": {
     "OFFICIAL_TRUST_REGISTRY_URL": "https://frontend.wallet.gov.tw/api/did",
-    "VERIFIER_ORIGIN": "https://verifier.mashbean.net"
+    "VERIFIER_ORIGIN": "https://verifier.mashbean.net",
+    "ZKP_VERIFIER_URL": ""
   }
 }

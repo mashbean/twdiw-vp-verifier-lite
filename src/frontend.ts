@@ -32,6 +32,7 @@ export const FRONTEND_HTML = /* html */ `<!doctype html>
       <a href="#try">立即測試</a>
       <a href="#developers">免費部署</a>
       <a href="#questions">Q&amp;A</a>
+      <a href="/zkp">零知識證明測試</a>
       <a href="https://github.com/mashbean/twdiw-vp-verifier-lite">GitHub</a>
     </nav>
   </header>
@@ -231,7 +232,7 @@ export const FRONTEND_HTML = /* html */ `<!doctype html>
         </details>
         <details>
           <summary>已滿 18 歲就是零知識證明嗎？</summary>
-          <p>不一定。只有卡片直接提供年齡述詞時，才能只揭露該述詞；以生日在 verifier 端計算年齡仍屬選擇性揭露，不是零知識證明。</p>
+          <p>不一定。只有卡片直接提供年齡述詞時，才能只揭露該述詞；以生日在 verifier 端計算年齡仍屬選擇性揭露，不是零知識證明。想試真正的零知識年齡證明，請到<a href="/zkp">零知識證明測試</a>頁，用有備而來建立「已滿 N 歲」的證明並比較耗時。</p>
         </details>
         <details>
           <summary>這是數位發展部的官方服務嗎？</summary>
@@ -254,6 +255,7 @@ export const FRONTEND_HTML = /* html */ `<!doctype html>
         <a href="https://openid.net/specs/openid-4-verifiable-presentations-1_0.html"><strong>OpenID4VP 1.0</strong><span>標準規格</span></a>
         <a href="https://github.com/mashbean/twdiw-vp-verifier-lite"><strong>Verifier Lite</strong><span>原始碼與部署說明</span></a>
         <a href="https://github.com/mashbean/twdiw-vp-verifier-lite/blob/main/docs/privacy-compliance.md"><strong>個資合規模組</strong><span>告知範本與部署檢核</span></a>
+        <a href="/zkp"><strong>零知識證明測試</strong><span>/zkp · 有備而來年齡述詞證明與耗時比較</span></a>
       </div>
     </section>
   </main>
@@ -412,6 +414,7 @@ function openResultChannel(url,key){
   socket.onerror=()=>{};
 }
 
+function recordTiming(entry){try{const key='bonds-verifier-timings';const stored=JSON.parse(sessionStorage.getItem(key)||'[]');const list=(Array.isArray(stored)?stored:[]).concat([entry]).slice(-20);sessionStorage.setItem(key,JSON.stringify(list))}catch{}}
 function evidenceCard(title,detail){const card=document.createElement('div');card.className='evidence-card';card.append(text('strong',title),text('small',detail));return card}
 function statusDetail(data){
   if(data.credentialStatus==='valid')return '狀態清單確認為有效';
@@ -431,6 +434,7 @@ function renderResult(data){
     evidence.append(evidenceCard('憑證狀態',statusDetail(data)));
   }else evidence.append(evidenceCard('自然人憑證簽章','MOICA G3 憑證鏈與每張卡 did:key 已驗證'));
   if(data.timingMs)evidence.append(evidenceCard('查驗耗時',data.timingMs.total+' ms（信任清單 '+data.timingMs.trust+' ms、憑證與狀態 '+data.timingMs.credential+' ms）'));
+  if(data.timingMs)recordTiming({flow:'sd-jwt-vc',source:data.credentialSource,profileId:data.profileId,at:Date.now(),totalMs:data.timingMs.total,verifyMs:data.timingMs.credential,credentialMs:data.timingMs.credential,trustMs:data.timingMs.trust});
   host.append(evidence);
   const profile=state.profiles.find((item)=>item.id===data.profileId);const labels={};(profile?.variants||[]).forEach((v)=>Object.assign(labels,v.claimLabels||{}));
   const table=document.createElement('table');table.className='claims';
