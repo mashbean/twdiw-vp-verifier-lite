@@ -116,7 +116,7 @@ API：
 - `GET /api/zkp/events/:id`：與 `/api/events/:id` 相同的一次性訂閱協定。
 - `POST /api/zkp/response/:id`：皮夾回傳 `AgePredicateProofPackage`；200 通過、400 失敗、404 session 已不存在、502 後端無法連線。
 
-設定 `ZKP_VERIFIER_URL`（var，兩個 wrangler 設定檔預設空白）與 `ZKP_VERIFIER_TOKEN`（secret，`wrangler secret put`）後功能才會啟用；空白時 `/zkp` 只顯示說明。Wire contract、驗證順序、隱私邊界與耗時欄位的完整說明見 [docs/zkp-age-proof.md](docs/zkp-age-proof.md)。
+以 `wrangler secret put` 設定 `ZKP_VERIFIER_URL` 與 `ZKP_VERIFIER_TOKEN` 兩個 secret 後功能才會啟用；未設定時 `/zkp` 只顯示說明。（兩者都是 secret：Cloudflare 不允許 secret 與 var 同名，而後端網址會隨 quick tunnel 重啟改變。）Wire contract、驗證順序、隱私邊界與耗時欄位的完整說明見 [docs/zkp-age-proof.md](docs/zkp-age-proof.md)。
 
 ## OIDC4VP 相容範圍
 
@@ -158,7 +158,7 @@ npx wrangler deploy --dry-run
 |---|---|---|
 | `VERIFIER_ORIGIN` | 空白 | request/response 的公開 HTTPS origin；空白時取目前 origin |
 | `OFFICIAL_TRUST_REGISTRY_URL` | `https://frontend.wallet.gov.tw/api/did` | 以 `/{issuerDid}` 查詢的官方 DID API base URL；查不到時拒絕 |
-| `ZKP_VERIFIER_URL` | 空白 | 零知識年齡證明原生後端（`native/openac-age-verifier`）的 base URL；空白時 `/zkp` 停用建立請求 |
+| `ZKP_VERIFIER_URL`（secret） | 未設定 | 零知識年齡證明原生後端（`native/openac-age-verifier`）的 base URL；未設定時 `/zkp` 停用建立請求 |
 | `ZKP_VERIFIER_TOKEN` | （secret） | 呼叫原生後端 `/verify` 的 bearer token，以 `wrangler secret put ZKP_VERIFIER_TOKEN` 設定，不寫進設定檔 |
 
 ## 安全與隱私限制

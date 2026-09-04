@@ -23,7 +23,6 @@
   ],
   "vars": {
     "OFFICIAL_TRUST_REGISTRY_URL": "https://frontend.wallet.gov.tw/api/did",
-    "VERIFIER_ORIGIN": "",
-    "ZKP_VERIFIER_URL": ""
+    "VERIFIER_ORIGIN": ""
   }
 }

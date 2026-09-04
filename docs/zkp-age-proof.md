@@ -125,7 +125,7 @@ Durable Object class：`ZkpSession`（binding `ZKP_SESSIONS`，migration `v3`）
 
 | 名稱 | 類型 | 說明 |
 |---|---|---|
-| `ZKP_VERIFIER_URL` | var（兩個 wrangler 設定檔預設空白） | 原生後端 base URL，例如 `https://zkp-native.example`；空白時 `/zkp` 只說明、不能建立請求 |
+| `ZKP_VERIFIER_URL` | secret（`wrangler secret put`；不可同時是 var） | 原生後端 base URL，例如 `https://zkp-native.example`；未設定時 `/zkp` 只說明、不能建立請求 |
 | `ZKP_VERIFIER_TOKEN` | secret（`wrangler secret put ZKP_VERIFIER_TOKEN`） | 對應後端 `OPENAC_AGE_VERIFIER_TOKEN` 的 bearer token |
 
 原生後端的啟動方式、金鑰下載與釘住規則見 `native/openac-age-verifier`。
