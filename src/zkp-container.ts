@@ -82,8 +82,14 @@ export async function warmZkpContainer(env: Env): Promise<void> {
 export function zkpContainerFetcher(env: Env): typeof fetch | undefined {
   if (!env.ZKP_CONTAINER) return undefined;
   const stub = env.ZKP_CONTAINER.getByName(ZKP_CONTAINER_NAME);
+  // Hand the Durable Object a real `Request` and let the `Container` base
+  // class proxy it to `defaultPort`. Passing a `RequestInit` as a positional
+  // argument to `containerFetch` does not survive the DO RPC boundary — the
+  // body and headers arrive empty — so the request is built here and sent
+  // through the stub's own `fetch`, which is what the container library
+  // documents.
   return ((input: RequestInfo | URL, init?: RequestInit) =>
-    stub.containerFetch(input as string, init, ZKP_CONTAINER_PORT)) as typeof fetch;
+    stub.fetch(new Request(input as string | URL, init))) as typeof fetch;
 }
 
 /** Any absolute origin; only the path reaches the container. */
