@@ -28,6 +28,14 @@
 - 零知識證明的收卡後證明建立與完整查驗流程不在目前 v0.2 範圍內。
 - 本專案採 TWDIW 相容的 Presentation Exchange 加 DCQL 混合 request，尚未宣稱通過 OpenID Foundation OIDC4VP 1.0 Final conformance suite。
 
+## 2026-09-04 晚：零知識證明年齡查驗（/zkp）
+
+- 新增 `/zkp` 頁與 `ZkpSession` Durable Object（migration v3）：頁面出一次性請求 QR（含 nonce、台北時區 cutoff、來源、最低年齡、回應網址），有備而來建立 OpenAC 年齡述詞證明後 POST 回來；Worker 核對陳述、本地解析 issuer did:key、政府卡查官方信任清單，再把兩個證明轉送到 `native/openac-age-verifier`（Rust，432 MB 驗證金鑰放不進 Worker），只保留是非與秒數。
+- 頁面比較同一瀏覽器裡 SD-JWT-VC 出示與 ZKP 的秒數（sessionStorage，只有數字）；首頁結果也寫入同一份紀錄。
+- 已部署到 verifier.mashbean.net；後端經 Cloudflare quick tunnel 從開發 Mac 對外（網址每次重啟改變，`run-local.sh --publish` 會更新 secret）。`ZKP_VERIFIER_URL`／`ZKP_VERIFIER_TOKEN` 都是 secret。
+- 已驗證：Worker→隧道→原生服務整條以假證明包走通（原生服務拒絕不能反序列化的證明、頁面收到失敗結果與秒數）；**尚未**以真實證明驗收——第一張真證明同時是原生服務的第一個正向向量，需要 iPhone 上的新版 App（bonds-tw/backupTW-iOS#59）。
+- 沒有出生日期欄位的政府卡（實測的駕照電子卡）不能建立年齡證明；自發 MyData 證件的證明標示為自發、非政府背書。
+
 ## 維運界線
 
 - 示範站是依公開原始碼建立的互通實驗，不是數位發展部官方服務，也不等於取得官方驗證者資格。
