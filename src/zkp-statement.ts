@@ -80,6 +80,34 @@ export function isSupportedClaimName(name: string): name is (typeof SUPPORTED_CL
 }
 
 // ---------------------------------------------------------------------------
+// Which backend checks the proof
+//
+// Pure, and kept out of zkp-container.ts, because that module imports
+// `@cloudflare/containers` and therefore `cloudflare:workers`, which vitest
+// cannot load. The same split as the rest of this file.
+
+/** Whether this deployment has a container to verify with. */
+export function hasZkpContainer(env: Env): boolean {
+  return Boolean(env.ZKP_CONTAINER);
+}
+
+export type ZkpBackend = "container" | "external" | "none";
+
+/**
+ * Which backend answers, in one place, so the page's `/api/zkp/config`, the
+ * readiness check and the session all agree.
+ *
+ * The external URL wins when both exist. That is the debugging order: a laptop
+ * behind a tunnel is set deliberately and temporarily, and while it is set it
+ * should be what the site uses — a request that silently went to the container
+ * instead would be measured against the wrong machine.
+ */
+export function chooseZkpBackend(env: Env): ZkpBackend {
+  if (env.ZKP_VERIFIER_URL?.trim()) return "external";
+  return hasZkpContainer(env) ? "container" : "none";
+}
+
+// ---------------------------------------------------------------------------
 // Civil dates in Asia/Taipei
 
 export interface CivilDate {

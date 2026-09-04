@@ -28,6 +28,7 @@ import {
   type ZkpPageResult,
   type ZkpProofPackage,
   type ZkpStatement,
+  chooseZkpBackend,
 } from "../src/zkp-statement";
 
 // The exact `iss` the 有備而來 government card carried in the 2026-08-30 live run.
@@ -320,5 +321,31 @@ describe("result shaping", () => {
       timingMs: page.timingMs,
     });
     expect(appResultOf({ ...page, status: "failed", accepted: false, reason: "x" })).toMatchObject({ reason: "x" });
+  });
+});
+
+describe("backend selection", () => {
+  const container = {} as Env["ZKP_CONTAINER"];
+
+  it("uses the container when no external URL is configured", () => {
+    expect(chooseZkpBackend({ ZKP_CONTAINER: container } as Env)).toBe("container");
+  });
+
+  it("lets a deliberately set external URL win over the container", () => {
+    // The override is how a suspected mismatch gets debugged against a laptop
+    // whose log is in front of you. Silently preferring the container would
+    // measure the wrong machine.
+    expect(chooseZkpBackend({ ZKP_CONTAINER: container, ZKP_VERIFIER_URL: "https://tunnel.example" } as Env)).toBe("external");
+  });
+
+  it("ignores an empty or whitespace external URL", () => {
+    expect(chooseZkpBackend({ ZKP_CONTAINER: container, ZKP_VERIFIER_URL: "   " } as Env)).toBe("container");
+    expect(chooseZkpBackend({ ZKP_VERIFIER_URL: "" } as Env)).toBe("none");
+  });
+
+  it("reports none on a free-plan deployment with neither", () => {
+    // wrangler.jsonc declares no container so the one-click deploy stays on the
+    // free plan; /zkp then explains itself and refuses to mint requests.
+    expect(chooseZkpBackend({} as Env)).toBe("none");
   });
 });

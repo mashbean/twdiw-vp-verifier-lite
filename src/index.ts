@@ -5,6 +5,7 @@ import { FRONTEND_CSS, FRONTEND_HTML, FRONTEND_JS } from "./frontend";
 import { getProfile, getVariant, publicProfiles, type CredentialSource, type WalletFamily } from "./profiles";
 import { PRIVACY_NOTICE, privacyCategoriesForClaims } from "./privacy-notice";
 import { ZkpSession } from "./zkp";
+import { warmZkpContainer, ZkpVerifierContainer } from "./zkp-container";
 import { ZKP_CSS, ZKP_HTML, ZKP_JS } from "./zkp-frontend";
 import {
   CLAIM_LABELS,
@@ -20,9 +21,10 @@ import {
   REQUEST_LIFETIME_MS,
   sanitizePurpose,
   SOURCE_LABELS,
+  chooseZkpBackend,
 } from "./zkp-statement";
 
-export { PresentationSession, VerifierIdentity, ZkpSession };
+export { PresentationSession, VerifierIdentity, ZkpSession, ZkpVerifierContainer };
 
 // The ZKP request carries a zh-Hant purpose. The library's default encoder keeps
 // only the low byte of each UTF-16 code unit, so opt into UTF-8 — a no-op for
@@ -83,11 +85,11 @@ function validSessionId(value: string): boolean {
 
 /** The native age-proof verifier is optional; without it the /zkp page only explains itself. */
 function zkpConfigured(env: Env): boolean {
-  return Boolean(env.ZKP_VERIFIER_URL?.trim());
+  return chooseZkpBackend(env) !== "none";
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
 
@@ -194,6 +196,7 @@ export default {
     if (request.method === "GET" && path === "/api/zkp/config") {
       return json(request, {
         configured: zkpConfigured(env),
+        backend: chooseZkpBackend(env),
         requestLifetimeMs: REQUEST_LIFETIME_MS,
         sessionGraceMs: REQUEST_GRACE_MS,
         defaultMinimumAge: DEFAULT_MINIMUM_AGE,
@@ -233,6 +236,10 @@ export default {
         purpose,
         responseUrl,
       });
+      // Wake the container while the holder is still scanning. Their phone
+      // needs about twenty seconds to build the proof pair, which is longer
+      // than a cold start, so the boot is free if it begins now.
+      ctx.waitUntil(warmZkpContainer(env));
       const eventsUrl = `${origin.replace(/^http/, "ws")}/api/zkp/events/${id}`;
       return json(request, {
         id,

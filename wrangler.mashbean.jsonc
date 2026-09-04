@@ -12,17 +12,44 @@
     "logs": { "enabled": false, "invocation_logs": false, "persist": false },
     "traces": { "enabled": false, "persist": false }
   },
+  // The zero-knowledge verifier runs as a container because its Prepare
+  // verifying key is 412 MB and a Worker isolate has 128 MiB. Containers need
+  // the Workers Paid plan, so they are declared only here, in the demo
+  // deployment — wrangler.jsonc stays deployable on the free plan and uses the
+  // ZKP_VERIFIER_URL secret instead.
+  //
+  // The image is referenced by tag rather than by Dockerfile path so that a
+  // deploy needs no local Docker. `.github/workflows/container.yml` builds and
+  // pushes that tag; `native/openac-age-verifier/Dockerfile` is its source.
+  "containers": [
+    {
+      "name": "openac-age-verifier",
+      "class_name": "ZkpVerifierContainer",
+      "image": "registry.cloudflare.com/fd8f8ed12dcdfd03ad171a3a74bc712a/openac-age-verifier:openac-age-v1",
+      // 4 GiB. The service holds 429 MB once its keys are loaded; the peak
+      // during verification has not been measured yet, so this leaves room.
+      // Drop to "basic" (1 GiB) once a real proof has been checked and the
+      // peak is known.
+      "instance_type": "standard-1",
+      // A ceiling on cost as much as on load: each awake instance bills its
+      // provisioned memory for as long as it stays awake.
+      "max_instances": 2
+    }
+  ],
+
   "durable_objects": {
     "bindings": [
       { "name": "SESSIONS", "class_name": "PresentationSession" },
       { "name": "IDENTITY", "class_name": "VerifierIdentity" },
-      { "name": "ZKP_SESSIONS", "class_name": "ZkpSession" }
+      { "name": "ZKP_SESSIONS", "class_name": "ZkpSession" },
+      { "name": "ZKP_CONTAINER", "class_name": "ZkpVerifierContainer" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["PresentationSession"] },
     { "tag": "v2", "new_sqlite_classes": ["VerifierIdentity"] },
-    { "tag": "v3", "new_sqlite_classes": ["ZkpSession"] }
+    { "tag": "v3", "new_sqlite_classes": ["ZkpSession"] },
+    { "tag": "v4", "new_sqlite_classes": ["ZkpVerifierContainer"] }
   ],
   "vars": {
     "OFFICIAL_TRUST_REGISTRY_URL": "https://frontend.wallet.gov.tw/api/did",

@@ -99,6 +99,34 @@ Header `Authorization: Bearer ${ZKP_VERIFIER_TOKEN}`，`AbortSignal.timeout(60_0
 
 Durable Object class：`ZkpSession`（binding `ZKP_SESSIONS`，migration `v3`）。
 
+## 驗證後端跑在哪裡
+
+`/zkp` 的密碼學驗證不可能在 Worker 裡做：一個 isolate 只有 128 MiB，光 Prepare 驗證金鑰就 412 MB。Spartan2／Hyrax 不需要 trusted setup，代價就是驗證端得自己評估電路，金鑰幾乎等於電路本身。所以驗證由 `native/openac-age-verifier` 這支原生服務負責，Worker 只轉送證明、收回是非與秒數。
+
+支援兩種後端，`GET /api/zkp/config` 的 `backend` 欄位會說明現在是哪一種：
+
+| backend | 什麼情況 | 用途 |
+|---|---|---|
+| `container` | 部署宣告了容器（`wrangler.mashbean.jsonc`） | 正式路徑，全部留在 Cloudflare |
+| `external` | 設了 `ZKP_VERIFIER_URL` secret | 開發用，指向筆電上的服務 |
+| `none` | 兩者皆無 | `/zkp` 只顯示說明，不能建立請求 |
+
+兩者同時存在時 `external` 優先。那是除錯順序：隧道是刻意、暫時設定的，設著的時候就該用它，否則量到的是另一台機器。
+
+### 容器
+
+- 宣告在 `wrangler.mashbean.jsonc`，不在 `wrangler.jsonc`。Containers 需要 Workers Paid，示範站付費、開源一鍵部署留在免費方案。
+- `standard-1`（1/2 vCPU、4 GiB 記憶體、8 GB 磁碟）。服務載完金鑰常駐 429 MB，驗證當下的峰值尚未量測，所以先留餘裕；量到之後可以降到 `basic`（1 GiB）。
+- `sleepAfter` 預設 10 分鐘。記憶體與磁碟只在醒著時計費，睡著不計。4 GiB 下，Workers Paid 每月含的 25 GiB-hours 約等於六小時的醒著時間。
+- 建立 session 時就先喚醒容器（`warmZkpContainer`）。手機接下來要花約 20 秒產證明，比冷啟動久，所以這段開機是免費的。
+- `enableInternet = false`：金鑰烤進映像，服務不對外抓任何東西。
+
+### 映像
+
+`native/openac-age-verifier/Dockerfile`，`linux/amd64`。兩個驗證金鑰在建置時下載並比對壓縮與解壓後的 SHA-256，與服務啟動時再檢查一次的是同一組 pin，所以 GitHub release 被重新發佈會讓建置失敗，而不是讓一個內容不明的金鑰上線。
+
+映像由 `.github/workflows/container.yml` 建置並推到 Cloudflare managed registry，設定檔以 tag 引用它。這樣 `wrangler deploy` 不需要本機 Docker：Apple Silicon 上要建 amd64 映像得跑模擬，而部署預先建好的映像完全不用 Docker。CI 需要一個 repository secret `CLOUDFLARE_API_TOKEN`。
+
 ## 隱私邊界
 
 - Worker／Durable Object 只保存 nonce、serviceId、resultKey、來源、門檻、截止日、目的與建立時間，直到結果送出或 alarm（lifetime + 60 s）刪除。

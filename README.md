@@ -116,7 +116,7 @@ API：
 - `GET /api/zkp/events/:id`：與 `/api/events/:id` 相同的一次性訂閱協定。
 - `POST /api/zkp/response/:id`：皮夾回傳 `AgePredicateProofPackage`；200 通過、400 失敗、404 session 已不存在、502 後端無法連線。
 
-以 `wrangler secret put` 設定 `ZKP_VERIFIER_URL` 與 `ZKP_VERIFIER_TOKEN` 兩個 secret 後功能才會啟用；未設定時 `/zkp` 只顯示說明。（兩者都是 secret：Cloudflare 不允許 secret 與 var 同名，而後端網址會隨 quick tunnel 重啟改變。）Wire contract、驗證順序、隱私邊界與耗時欄位的完整說明見 [docs/zkp-age-proof.md](docs/zkp-age-proof.md)。
+驗證後端有兩種：示範站用 Cloudflare Container（宣告在 `wrangler.mashbean.jsonc`，需 Workers Paid），開發時可用 `wrangler secret put ZKP_VERIFIER_URL` 指向自己機器上的服務並覆蓋容器。兩者皆無時 `/zkp` 只顯示說明。`GET /api/zkp/config` 的 `backend` 欄位會說明目前是哪一種。Wire contract、驗證順序、隱私邊界與耗時欄位的完整說明見 [docs/zkp-age-proof.md](docs/zkp-age-proof.md)。
 
 ## OIDC4VP 相容範圍
 

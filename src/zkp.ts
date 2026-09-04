@@ -9,6 +9,7 @@
 
 import { DurableObject } from "cloudflare:workers";
 import { isAuthorizedResultSocket, parseResultSubscription, resultKeysEqual } from "./result-channel";
+import { ZKP_CONTAINER_ORIGIN, zkpContainerFetcher } from "./zkp-container";
 import { resolveGovernmentIssuerTrust, type IssuerTrustEvidence } from "./trust";
 import {
   appResultOf,
@@ -30,6 +31,7 @@ import {
   type ZkpPageResult,
   type ZkpStatement,
   type ZkpTimingMs,
+  chooseZkpBackend,
 } from "./zkp-statement";
 
 interface ZkpSessionState {
@@ -237,9 +239,15 @@ export class ZkpSession extends DurableObject<Env> {
 
     const nativeBody = buildNativeRequest(pkg, statement, issuerKey);
     if (!nativeBody) return this.fail(session, "截止日期無法以該欄位格式表示", timing(holder), evidence);
+    // Two backends, one contract. `ZKP_VERIFIER_URL` is the override: a laptop
+    // behind a tunnel, which is how a new circuit or a suspected mismatch gets
+    // debugged with the service's own log in front of you. With no override the
+    // container beside this Worker answers, and nothing leaves Cloudflare.
+    const containerFetcher = chooseZkpBackend(this.env) === "container" ? zkpContainerFetcher(this.env) : undefined;
     const outcome = await verifyWithNativeService(nativeBody, {
-      baseUrl: this.env.ZKP_VERIFIER_URL,
+      baseUrl: containerFetcher ? ZKP_CONTAINER_ORIGIN : this.env.ZKP_VERIFIER_URL,
       token: this.env.ZKP_VERIFIER_TOKEN,
+      fetcher: containerFetcher,
     });
     if (outcome.kind === "unavailable") {
       return this.fail(session, NATIVE_UNAVAILABLE_REASON, timing(holder), evidence, 502);

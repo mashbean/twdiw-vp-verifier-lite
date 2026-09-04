@@ -19,6 +19,7 @@
     "cf-typegen": "wrangler types --config wrangler.jsonc"
   },
   "dependencies": {
+    "@cloudflare/containers": "^0.3.7",
     "@peculiar/x509": "^2.0.0",
     "@sd-jwt/core": "^0.10.0",
     "@sd-jwt/sd-jwt-vc": "^0.10.0",
