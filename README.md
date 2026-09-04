@@ -156,6 +156,8 @@ npx wrangler deploy --dry-run
 
 2026-09-03 的 Cloudflare/Workers 資安檢查、修正與剩餘風險見 [docs/security-audit-2026-09-03.md](docs/security-audit-2026-09-03.md)。
 
+第一階段已完成的範圍、已取得的證據及尚待實機確認項目，整理於[階段收尾註記（2026-09-04）](docs/project-status-2026-09-04.md)。
+
 建立 QR 前會顯示隨 requested claims 更新的個資蒐集、處理及利用告知，並要求使用者確認已閱讀。法規對照、資料類別 mapping、自行部署必改項目與零持久化限制見 [docs/privacy-compliance.md](docs/privacy-compliance.md)。這個模組協助落實告知與資料最少化，不構成法律意見或自動合規認證。
 
 ## 相關連結
