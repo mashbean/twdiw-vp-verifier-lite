@@ -125,7 +125,26 @@ Durable Object class：`ZkpSession`（binding `ZKP_SESSIONS`，migration `v3`）
 
 `native/openac-age-verifier/Dockerfile`，`linux/amd64`。兩個驗證金鑰在建置時下載並比對壓縮與解壓後的 SHA-256，與服務啟動時再檢查一次的是同一組 pin，所以 GitHub release 被重新發佈會讓建置失敗，而不是讓一個內容不明的金鑰上線。
 
-映像由 `.github/workflows/container.yml` 建置並推到 Cloudflare managed registry，設定檔以 tag 引用它。這樣 `wrangler deploy` 不需要本機 Docker：Apple Silicon 上要建 amd64 映像得跑模擬，而部署預先建好的映像完全不用 Docker。CI 需要一個 repository secret `CLOUDFLARE_API_TOKEN`。
+映像由 **Workers Builds** 建置，不需要任何人本機裝 Docker：Cloudflare 的建置環境（Ubuntu 24.04 x86_64）可以跑 Dockerfile 建置，推到 main 就會建映像、推進 Cloudflare registry、滾動容器並部署 Worker。
+
+設定方式（Cloudflare dashboard，Workers & Pages → `mashbean-vp-verifier` → Settings → Build）：
+
+| 欄位 | 值 |
+|---|---|
+| Git 儲存庫 | `mashbean/twdiw-vp-verifier-lite` |
+| Production branch | `main` |
+| Root directory | 儲存庫根目錄（wrangler 設定與 Dockerfile 都在這底下） |
+| Deploy command | `npx wrangler deploy --config wrangler.mashbean.jsonc` |
+
+只有 production branch 的完整 `wrangler deploy` 會發佈映像。Workers Builds 在非 production branch 預設跑 `wrangler versions upload`，那只上傳 Worker 程式碼，不會建映像也不會滾動容器。用 Durable Object 的 Worker 也不會產生 preview URL。
+
+沒有 Docker 的機器仍然可以部署 Worker 程式碼，只是不動容器：
+
+```sh
+npm run deploy:mashbean:worker-only   # wrangler deploy --containers-rollout=none
+```
+
+需要在本機建映像時（例如改了 Dockerfile 想先驗），才需要 Docker，而且映像必須是 `linux/amd64`。
 
 ## 隱私邊界
 

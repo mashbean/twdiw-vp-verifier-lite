@@ -18,14 +18,18 @@
   // deployment — wrangler.jsonc stays deployable on the free plan and uses the
   // ZKP_VERIFIER_URL secret instead.
   //
-  // The image is referenced by tag rather than by Dockerfile path so that a
-  // deploy needs no local Docker. `.github/workflows/container.yml` builds and
-  // pushes that tag; `native/openac-age-verifier/Dockerfile` is its source.
+  // The image is built from its Dockerfile by whoever runs `wrangler deploy`.
+  // That is Workers Builds: its environment can run Dockerfile builds, so the
+  // image is built, pushed to Cloudflare's registry and rolled out on a push to
+  // the production branch, and no laptop needs Docker. Only a full
+  // `wrangler deploy` publishes an image — the `wrangler versions upload` that
+  // Workers Builds runs on non-production branches uploads Worker code alone.
   "containers": [
     {
       "name": "openac-age-verifier",
       "class_name": "ZkpVerifierContainer",
-      "image": "registry.cloudflare.com/fd8f8ed12dcdfd03ad171a3a74bc712a/openac-age-verifier:openac-age-v1",
+      "image": "./native/openac-age-verifier/Dockerfile",
+      "image_build_context": "./native/openac-age-verifier",
       // 4 GiB. The service holds 429 MB once its keys are loaded; the peak
       // during verification has not been measured yet, so this leaves room.
       // Drop to "basic" (1 GiB) once a real proof has been checked and the

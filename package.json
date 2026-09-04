@@ -16,7 +16,8 @@
     "deploy:mashbean": "wrangler deploy --config wrangler.mashbean.jsonc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "cf-typegen": "wrangler types --config wrangler.jsonc"
+    "cf-typegen": "wrangler types --config wrangler.jsonc",
+    "deploy:mashbean:worker-only": "wrangler deploy --config wrangler.mashbean.jsonc --containers-rollout=none"
   },
   "dependencies": {
     "@cloudflare/containers": "^0.3.7",
